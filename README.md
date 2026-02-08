@@ -1,1 +1,0 @@
-# grossdeutschland-Frankfurt-Stock-Exchange
