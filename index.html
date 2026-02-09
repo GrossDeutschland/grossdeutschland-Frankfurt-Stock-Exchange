@@ -1848,7 +1848,7 @@ function startPriceSimulation() {
             
             for (const stock of stocks) {
                 // -5% ~ +5% 랜덤 변동
-                const changePercent = (Math.random() * 10 - 5) / 100;
+                const changePercent = (Math.random() * 15 - 5) / 100;
                 const oldPrice = stock.price;
                 const newPrice = Math.max(1000, stock.price * (1 + changePercent));
                 const change = ((newPrice - oldPrice) / oldPrice) * 100;
