@@ -1513,47 +1513,47 @@ function updateChart() {
     switch(timeRange) {
         case '1M':
             dataPoints = 7;
-            labels = ['현재', '1분전', '2분전', '3분전', '4분전', '5분전', '6분전'];
+            labels = ['6분전', '5분전', '4분전', '3분전', '2분전', '1분전', '현재'];
             timeFormat = '6분간 추이';
             break;
         case '30M':
             dataPoints = 7;
-            labels = ['현재', '30분전', '60분전', '90분전', '120분전', '150분전', '180분전'];
+            labels = ['180분전', '150분전', '120분전', '90분전', '60분전', '30분전', '현재'];
             timeFormat = '3시간 추이';
             break;
         case '1H':
             dataPoints = 7;
-            labels = ['현재', '1시간전', '2시간전', '3시간전', '4시간전', '5시간전', '6시간전'];
+            labels = ['6시간전', '5시간전', '4시간전', '3시간전', '2시간전', '1시간전', '현재'];
             timeFormat = '6시간 추이';
             break;
         case '1D':
             dataPoints = 7;
-            labels = ['현재', '1일전', '2일전', '3일전', '4일전', '5일전', '6일전'];
+            labels = ['6일전', '5일전', '4일전', '3일전', '2일전', '1일전', '현재'];
             timeFormat = '1주일 추이';
             break;
         case '1MO':
             dataPoints = 7;
-            labels = ['현재', '1개월전', '2개월전', '3개월전', '4개월전', '5개월전', '6개월전'];
+            labels = ['6개월전', '5개월전', '4개월전', '3개월전', '2개월전', '1개월전', '현재'];
             timeFormat = '6개월 추이';
             break;
         default:
             dataPoints = 7;
-            labels = ['현재', '1분전', '2분전', '3분전', '4분전', '5분전', '6분전'];
+            labels = ['6분전', '5분전', '4분전', '3분전', '2분전', '1분전', '현재'];
             timeFormat = '기본';
     }
     
     const data = [];
-    let price = basePrice; // 현재 가격에서 시작
+    let price = basePrice * 0.95; // 과거는 현재보다 약간 낮게 시작
     
-    // 첫 번째는 현재 가격
-    data.push(basePrice);
-    
-    // 나머지는 과거로 갈수록 랜덤하게 변동
-    for (let i = 1; i < dataPoints; i++) {
+    // 과거부터 현재까지 랜덤 워크
+    for (let i = 0; i < dataPoints - 1; i++) {
         const randomChange = (Math.random() - 0.5) * (basePrice * 0.03); // ±3% 변동
         price = Math.max(1000, price + randomChange);
         data.push(price);
     }
+    
+    // 마지막은 현재 가격
+    data.push(basePrice);
 
     if (chartInstance) {
         chartInstance.destroy();
