@@ -796,7 +796,7 @@ header {
         <header>
             <div style="display: flex; flex-direction: column; gap: 5px;">
                 <div class="logo">
-                    <img src="logo.png" alt="FWB Logo" class="logo-eagle">
+                    <div style="width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple)); display: flex; align-items: center; justify-content: center; font-size: 2rem; border: 2px solid var(--accent-blue); box-shadow: 0 0 15px var(--glow-blue);">📈</div>
                     FRANKFURTER WERTPAPIERBÖRSE
                 </div>
                 <div style="font-size: 0.7rem; color: var(--text-secondary); font-weight: 400; letter-spacing: 0.5px;">
@@ -945,7 +945,7 @@ header {
             </div>
 
             <div>
-                <h3 style="color: var(--accent-red); margin-bottom: 15px; font-size: 1rem;">기업 관리</h3>
+                <h3 style="color: var(--accent-red); margin-bottom: 15px; font-size: 1rem;">기업 관리 및 주가 설정</h3>
                 <div id="adminStockList"></div>
             </div>
 
@@ -962,10 +962,7 @@ header {
             <button class="modal-close" onclick="closeTransferModal()">×</button>
             <div class="modal-header">계좌 송금</div>
             
-            <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px; margin-bottom: 15px; border: 1px solid var(--accent-purple);">
-                <div style="font-size: 0.85rem; color: var(--accent-purple); font-weight: 600;">💳 송금 한도: 최대 ₩1,000,000</div>
-            </div>
-            
+
             <div class="input-group">
                 <label class="input-label">받는 사람 ID</label>
                 <input type="text" class="input-field" id="recipientId" placeholder="사용자 ID 입력">
@@ -973,7 +970,7 @@ header {
 
             <div class="input-group">
                 <label class="input-label">송금 금액</label>
-                <input type="number" class="input-field" id="transferAmount" placeholder="금액 입력 (최대 1,000,000)" min="1000" max="1000000">
+                <input type="number" class="input-field" id="transferAmount" placeholder="금액 입력" min="1000">
             </div>
 
             <button class="execute-btn buy" onclick="executeTransfer()">송금하기</button>
@@ -1235,22 +1232,24 @@ async function checkPriceUpdaterRole() {
 // 초기화 함수
 // ============================================
 async function init() {
+    // 🔥 주식 데이터는 로그인 여부와 상관없이 항상 로드
+    subscribeToStocks();
+    
     const savedUser = localStorage.getItem('fwb_currentUser');
     if (savedUser && database) {
         currentUser = savedUser;
         await loadUserData();
         document.getElementById('loginModal').style.display = 'none';
+        
+        subscribeToLeaderboard();
+        await checkPriceUpdaterRole();
+        renderAdminStockList();
+        
+        console.log('✅ 실시간 동기화 활성화 (중복 방지 적용)');
     } else {
         document.getElementById('loginModal').style.display = 'flex';
-        return;
+        console.log('📊 주식 데이터 로드 중 (로그인 대기)');
     }
-
-    subscribeToStocks();
-    subscribeToLeaderboard();
-    await checkPriceUpdaterRole();
-    renderAdminStockList();
-    
-    console.log('✅ 실시간 동기화 활성화 (중복 방지 적용)');
 }
 
 async function loadUserData() {
@@ -1834,8 +1833,8 @@ function startPriceSimulation() {
             const updates = {};
             
             for (const stock of currentStocks) {
-                // -5% ~ +5.5% 랜덤 변동
-                const changePercent = (Math.random() * 10.5 - 5) / 100;
+                // -5% ~ +6% 랜덤 변동
+                const changePercent = (Math.random() * 11 - 5) / 100;
                 const oldPrice = stock.price;
                 
                 // 🔒 주가 최저선: 1000원 절대 보장
@@ -1914,12 +1913,7 @@ async function executeTransfer() {
         return;
     }
 
-    if (amount > 1000000) {
-        showToast('송금 한도는 최대 1,000,000원입니다!', 'error');
-        return;
-    }
-
-    if (amount > userCash) {
+if (amount > userCash) {
         showToast('현금이 부족합니다!', 'error');
         return;
     }
@@ -2032,6 +2026,13 @@ function renderAdminStockList() {
             <button class="delete-stock-btn" onclick="deleteStock('${stock.symbol}')">삭제</button>
         </div>
     `).join('');
+    
+    // 🔥 주가 설정 드롭다운 업데이트
+    const priceSelect = document.getElementById('priceChangeSymbol');
+    if (priceSelect) {
+        priceSelect.innerHTML = '<option value="">종목 선택</option>' + 
+            stocks.map(stock => `<option value="${stock.symbol}">${stock.symbol} - ${stock.name}</option>`).join('');
+    }
 }
 
 async function renderAdminUserList() {
@@ -2265,6 +2266,58 @@ async function deleteStock(symbol) {
     } catch (error) {
         console.error('기업 삭제 실패:', error);
         showToast('기업 삭제 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+
+// ============================================
+// 🔥 관리자 주가 설정 기능
+// ============================================
+async function changeStockPrice() {
+    const symbol = document.getElementById('priceChangeSymbol').value;
+    const newPrice = parseInt(document.getElementById('newPriceValue').value);
+
+    if (!symbol) {
+        showToast('종목을 선택하세요!', 'error');
+        return;
+    }
+
+    if (!newPrice || newPrice < 1000) {
+        showToast('주가는 최소 1,000원 이상이어야 합니다!', 'error');
+        return;
+    }
+
+    if (!database) {
+        showToast('Firebase 연결이 필요합니다!', 'error');
+        return;
+    }
+
+    const stock = stocks.find(s => s.symbol === symbol);
+    if (!stock) {
+        showToast('종목을 찾을 수 없습니다!', 'error');
+        return;
+    }
+
+    if (!confirm(`${stock.name} (${symbol})의 주가를 ₩${newPrice.toLocaleString()}로 변경하시겠습니까?`)) {
+        return;
+    }
+
+    try {
+        const oldPrice = stock.price;
+        const change = ((newPrice - oldPrice) / oldPrice) * 100;
+
+        await database.ref(`stocks/${symbol}`).update({
+            price: newPrice,
+            change: parseFloat(change.toFixed(2))
+        });
+
+        showToast(`${stock.name} 주가 변경 완료: ₩${oldPrice.toLocaleString()} → ₩${newPrice.toLocaleString()}`, 'success');
+        
+        document.getElementById('newPriceValue').value = '';
+        document.getElementById('priceChangeSymbol').value = '';
+    } catch (error) {
+        console.error('주가 변경 실패:', error);
+        showToast('주가 변경 중 오류가 발생했습니다!', 'error');
     }
 }
 
