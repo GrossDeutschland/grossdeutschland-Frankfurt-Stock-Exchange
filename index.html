@@ -2019,20 +2019,17 @@ function renderAdminStockList() {
     
     container.innerHTML = stocks.map(stock => `
         <div class="stock-admin-item">
-            <div>
+            <div style="flex: 1;">
                 <div style="font-weight: 700; color: var(--accent-blue);">${stock.symbol}</div>
                 <div style="font-size: 0.85rem; color: var(--text-secondary);">${stock.name} - ₩${stock.price.toLocaleString()}</div>
             </div>
-            <button class="delete-stock-btn" onclick="deleteStock('${stock.symbol}')">삭제</button>
+            <div style="display: flex; gap: 8px;">
+                <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-blue);" 
+                        onclick="setStockPrice('${stock.symbol}', '${stock.name}', ${stock.price})">💰 주가설정</button>
+                <button class="delete-stock-btn" onclick="deleteStock('${stock.symbol}')">삭제</button>
+            </div>
         </div>
     `).join('');
-    
-    // 🔥 주가 설정 드롭다운 업데이트
-    const priceSelect = document.getElementById('priceChangeSymbol');
-    if (priceSelect) {
-        priceSelect.innerHTML = '<option value="">종목 선택</option>' + 
-            stocks.map(stock => `<option value="${stock.symbol}">${stock.symbol} - ${stock.name}</option>`).join('');
-    }
 }
 
 async function renderAdminUserList() {
@@ -2270,19 +2267,18 @@ async function deleteStock(symbol) {
 }
 
 
-// ============================================
-// 🔥 관리자 주가 설정 기능
-// ============================================
-async function changeStockPrice() {
-    const symbol = document.getElementById('priceChangeSymbol').value;
-    const newPrice = parseInt(document.getElementById('newPriceValue').value);
 
-    if (!symbol) {
-        showToast('종목을 선택하세요!', 'error');
-        return;
-    }
-
-    if (!newPrice || newPrice < 1000) {
+// ============================================
+// 🔥 관리자 주가 설정 (간단 버전)
+// ============================================
+async function setStockPrice(symbol, name, currentPrice) {
+    const newPrice = prompt(`${name} (${symbol})의 새 주가를 입력하세요:\n\n현재 주가: ₩${currentPrice.toLocaleString()}\n최소 1,000원 이상`, currentPrice);
+    
+    if (!newPrice) return; // 취소
+    
+    const price = parseInt(newPrice);
+    
+    if (isNaN(price) || price < 1000) {
         showToast('주가는 최소 1,000원 이상이어야 합니다!', 'error');
         return;
     }
@@ -2292,86 +2288,21 @@ async function changeStockPrice() {
         return;
     }
 
-    const stock = stocks.find(s => s.symbol === symbol);
-    if (!stock) {
-        showToast('종목을 찾을 수 없습니다!', 'error');
-        return;
-    }
-
-    if (!confirm(`${stock.name} (${symbol})의 주가를 ₩${newPrice.toLocaleString()}로 변경하시겠습니까?`)) {
-        return;
-    }
-
     try {
-        const oldPrice = stock.price;
-        const change = ((newPrice - oldPrice) / oldPrice) * 100;
+        const change = ((price - currentPrice) / currentPrice) * 100;
 
         await database.ref(`stocks/${symbol}`).update({
-            price: newPrice,
+            price: price,
             change: parseFloat(change.toFixed(2))
         });
 
-        showToast(`${stock.name} 주가 변경 완료: ₩${oldPrice.toLocaleString()} → ₩${newPrice.toLocaleString()}`, 'success');
-        
-        document.getElementById('newPriceValue').value = '';
-        document.getElementById('priceChangeSymbol').value = '';
+        showToast(`${name} 주가 변경: ₩${currentPrice.toLocaleString()} → ₩${price.toLocaleString()}`, 'success');
     } catch (error) {
         console.error('주가 변경 실패:', error);
         showToast('주가 변경 중 오류가 발생했습니다!', 'error');
     }
 }
 
-
-// ============================================
-// 🔥 관리자 주가 설정 기능
-// ============================================
-async function changeStockPrice() {
-    const symbol = document.getElementById('priceChangeSymbol').value;
-    const newPrice = parseInt(document.getElementById('newPriceValue').value);
-
-    if (!symbol) {
-        showToast('종목을 선택하세요!', 'error');
-        return;
-    }
-
-    if (!newPrice || newPrice < 1000) {
-        showToast('주가는 최소 1,000원 이상이어야 합니다!', 'error');
-        return;
-    }
-
-    if (!database) {
-        showToast('Firebase 연결이 필요합니다!', 'error');
-        return;
-    }
-
-    const stock = stocks.find(s => s.symbol === symbol);
-    if (!stock) {
-        showToast('종목을 찾을 수 없습니다!', 'error');
-        return;
-    }
-
-    if (!confirm(`${stock.name} (${symbol})의 주가를 ₩${newPrice.toLocaleString()}로 변경하시겠습니까?`)) {
-        return;
-    }
-
-    try {
-        const oldPrice = stock.price;
-        const change = ((newPrice - oldPrice) / oldPrice) * 100;
-
-        await database.ref(`stocks/${symbol}`).update({
-            price: newPrice,
-            change: parseFloat(change.toFixed(2))
-        });
-
-        showToast(`${stock.name} 주가 변경: ₩${oldPrice.toLocaleString()} → ₩${newPrice.toLocaleString()}`, 'success');
-        
-        document.getElementById('newPriceValue').value = '';
-        document.getElementById('priceChangeSymbol').value = '';
-    } catch (error) {
-        console.error('주가 변경 실패:', error);
-        showToast('주가 변경 중 오류가 발생했습니다!', 'error');
-    }
-}
 
 async function deleteMyAccount() {
     if (!confirm('⚠️ 정말로 계좌를 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없으며, 모든 데이터가 영구 삭제됩니다!')) {
