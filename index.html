@@ -810,11 +810,11 @@ header {
                 </div>
                 <div class="balance">
                     <div class="balance-label">총 자산</div>
-                    <div class="balance-amount" id="totalBalance">₩10,000,000</div>
+                    <div class="balance-amount" id="totalBalance">DM 10,000,000</div>
                 </div>
                 <div class="balance">
                     <div class="balance-label">현금</div>
-                    <div class="balance-amount" id="cashBalance">₩10,000,000</div>
+                    <div class="balance-amount" id="cashBalance">DM 10,000,000</div>
                 </div>
                 <div class="rank-badge">순위 #<span id="userRank">1</span></div>
                 <button class="transfer-btn" onclick="openTransferModal()">계좌송금</button>
@@ -837,7 +837,7 @@ header {
                 <div class="chart-header">
                     <div class="chart-stock-info">
                         <h2 id="chartSymbol">TECH-001</h2>
-                        <div class="current-price" id="chartPrice">₩125,000</div>
+                        <div class="current-price" id="chartPrice">DM 125,000</div>
                         <div class="price-change up" id="chartChange">+2,500 (+2.04%)</div>
                     </div>
                 </div>
@@ -876,11 +876,11 @@ header {
                     </div>
                     <div class="summary-row">
                         <span>주문 단가:</span>
-                        <span id="summaryPrice">₩125,000</span>
+                        <span id="summaryPrice">DM 125,000</span>
                     </div>
                     <div class="summary-row">
                         <span>총 주문 금액:</span>
-                        <span id="summaryTotal">₩125,000</span>
+                        <span id="summaryTotal">DM 125,000</span>
                     </div>
                 </div>
 
@@ -924,7 +924,7 @@ header {
                         <input type="text" class="input-field" id="newStockName" placeholder="새로운 기업">
                     </div>
                     <div class="input-group" style="margin-bottom: 0;">
-                        <label class="input-label">초기 주가 (₩)</label>
+                        <label class="input-label">초기 주가 (DM)</label>
                         <input type="number" class="input-field" id="newStockPrice" placeholder="100000" value="100000">
                     </div>
                     <div class="input-group" style="margin-bottom: 0;">
@@ -961,7 +961,6 @@ header {
         <div class="modal-content" style="position: relative;">
             <button class="modal-close" onclick="closeTransferModal()">×</button>
             <div class="modal-header">계좌 송금</div>
-            
 
             <div class="input-group">
                 <label class="input-label">받는 사람 ID</label>
@@ -1176,10 +1175,8 @@ async function checkPriceUpdaterRole() {
     try {
         const updaterRef = database.ref('system/priceUpdater');
         
-        // Transaction으로 Race Condition 방지
         updaterRef.transaction((currentData) => {
             if (!currentData) {
-                // 업데이터가 없으면 내가 됨
                 return {
                     userId: currentUser,
                     timestamp: Date.now()
@@ -1188,14 +1185,12 @@ async function checkPriceUpdaterRole() {
             
             const timeDiff = Date.now() - currentData.timestamp;
             if (timeDiff > 30000) {
-                // 30초 이상 응답 없으면 대체
                 return {
                     userId: currentUser,
                     timestamp: Date.now()
                 };
             }
             
-            // 현재 업데이터 유지 (변경 안 함)
             return undefined;
         }, (error, committed, snapshot) => {
             if (error) {
@@ -1208,7 +1203,6 @@ async function checkPriceUpdaterRole() {
                 console.log('✅ 주가 업데이트 담당자로 선정됨 (Transaction 보장)');
                 startPriceSimulation();
                 
-                // 5초마다 생존 신호 전송
                 setInterval(async () => {
                     if (isPriceUpdater) {
                         try {
@@ -1232,7 +1226,6 @@ async function checkPriceUpdaterRole() {
 // 초기화 함수
 // ============================================
 async function init() {
-    // 🔥 주식 데이터는 로그인 여부와 상관없이 항상 로드
     subscribeToStocks();
     
     const savedUser = localStorage.getItem('fwb_currentUser');
@@ -1445,7 +1438,7 @@ function renderStockList() {
             <div class="stock-symbol">${stock.symbol}</div>
             <div class="stock-name">${stock.name}</div>
             <div class="stock-price-info">
-                <span class="stock-price">₩${stock.price.toLocaleString()}</span>
+                <span class="stock-price">DM ${stock.price.toLocaleString()}</span>
                 <span class="stock-change ${stock.change >= 0 ? 'up' : 'down'}">
                     ${stock.change >= 0 ? '+' : ''}${stock.change.toFixed(2)}%
                 </span>
@@ -1457,7 +1450,7 @@ function renderStockList() {
 function selectStock(stock) {
     currentStock = stock;
     document.getElementById('chartSymbol').textContent = stock.symbol;
-    document.getElementById('chartPrice').textContent = `₩${stock.price.toLocaleString()}`;
+    document.getElementById('chartPrice').textContent = `DM ${stock.price.toLocaleString()}`;
     document.getElementById('chartChange').textContent = 
         `${stock.change >= 0 ? '+' : ''}${(stock.price * stock.change / 100).toLocaleString()} (${stock.change >= 0 ? '+' : ''}${stock.change.toFixed(2)}%)`;
     document.getElementById('chartChange').className = `price-change ${stock.change >= 0 ? 'up' : 'down'}`;
@@ -1576,7 +1569,7 @@ function renderChart(data, labels, timeFormat) {
                     borderColor: '#2a3547',
                     borderWidth: 1,
                     callbacks: {
-                        label: (context) => `₩${Math.round(context.parsed.y).toLocaleString()}`
+                        label: (context) => `DM ${Math.round(context.parsed.y).toLocaleString()}`
                     }
                 }
             },
@@ -1599,7 +1592,7 @@ function renderChart(data, labels, timeFormat) {
                             size: 10,
                             family: 'JetBrains Mono'
                         },
-                        callback: (value) => `₩${Math.round(value / 1000)}K`
+                        callback: (value) => `DM ${Math.round(value / 1000)}K`
                     }
                 }
             }
@@ -1627,8 +1620,8 @@ function updateTradeSummary() {
     const total = quantity * price;
 
     document.getElementById('summaryQuantity').textContent = `${quantity} 주`;
-    document.getElementById('summaryPrice').textContent = `₩${price.toLocaleString()}`;
-    document.getElementById('summaryTotal').textContent = `₩${total.toLocaleString()}`;
+    document.getElementById('summaryPrice').textContent = `DM ${price.toLocaleString()}`;
+    document.getElementById('summaryTotal').textContent = `DM ${total.toLocaleString()}`;
 }
 
 document.getElementById('tradeQuantity').addEventListener('input', updateTradeSummary);
@@ -1714,7 +1707,7 @@ function executeTrade() {
 }
 
 function updateBalance() {
-    document.getElementById('cashBalance').textContent = `₩${userCash.toLocaleString()}`;
+    document.getElementById('cashBalance').textContent = `DM ${userCash.toLocaleString()}`;
     
     let portfolioValue = userCash;
     Object.keys(portfolio).forEach(symbol => {
@@ -1724,7 +1717,7 @@ function updateBalance() {
         }
     });
     
-    document.getElementById('totalBalance').textContent = `₩${portfolioValue.toLocaleString()}`;
+    document.getElementById('totalBalance').textContent = `DM ${portfolioValue.toLocaleString()}`;
 }
 
 function updatePortfolio() {
@@ -1750,12 +1743,12 @@ function updatePortfolio() {
                 <div class="portfolio-header">
                     <span class="portfolio-symbol">${symbol}</span>
                     <span class="portfolio-pl ${profitLoss >= 0 ? 'up' : 'down'}" style="color: ${profitLoss >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">
-                        ${profitLoss >= 0 ? '+' : ''}₩${profitLoss.toLocaleString()} (${profitLossPercent.toFixed(2)}%)
+                        ${profitLoss >= 0 ? '+' : ''}DM ${profitLoss.toLocaleString()} (${profitLossPercent.toFixed(2)}%)
                     </span>
                 </div>
                 <div class="portfolio-details">
                     <span>${holding.quantity}주 보유</span>
-                    <span>평단 ₩${holding.avgPrice.toLocaleString()}</span>
+                    <span>평단 DM ${holding.avgPrice.toLocaleString()}</span>
                 </div>
             </div>
         `;
@@ -1791,7 +1784,7 @@ function renderLeaderboard() {
                 <div class="leaderboard-info">
                     <div class="leaderboard-name">${user.name}${user.isCurrentUser ? ' (나)' : ''}</div>
                     <div class="leaderboard-profit" style="color: ${user.profit >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">
-                        ${user.profit >= 0 ? '+' : ''}₩${user.profit.toLocaleString()}
+                        ${user.profit >= 0 ? '+' : ''}DM ${user.profit.toLocaleString()}
                     </div>
                 </div>
             </div>
@@ -1805,7 +1798,7 @@ function renderLeaderboard() {
 function startPriceSimulation() {
     if (!isPriceUpdater || !database) return;
     
-    console.log('🚀 주가 시뮬레이션 시작 (1분마다, 최저 ₩1,000 보장)');
+    console.log('🚀 주가 시뮬레이션 시작 (1분마다, 최저 DM 1,000 보장)');
     
     if (priceUpdateInterval) {
         clearInterval(priceUpdateInterval);
@@ -1818,7 +1811,6 @@ function startPriceSimulation() {
         }
         
         try {
-            // 매번 최신 데이터 가져오기
             const stocksSnapshot = await database.ref('stocks').once('value');
             const stocksData = stocksSnapshot.val();
             
@@ -1833,27 +1825,23 @@ function startPriceSimulation() {
             const updates = {};
             
             for (const stock of currentStocks) {
-                // -5% ~ +6% 랜덤 변동
                 const changePercent = (Math.random() * 11 - 5) / 100;
                 const oldPrice = stock.price;
                 
-                // 🔒 주가 최저선: 1000원 절대 보장
                 let newPrice = stock.price * (1 + changePercent);
                 if (newPrice < 1000) {
                     newPrice = 1000;
-                    console.warn(`⚠️ ${stock.symbol} 주가 1000원 미만 차단됨`);
+                    console.warn(`⚠️ ${stock.symbol} 주가 1000 미만 차단됨`);
                 }
                 newPrice = Math.round(newPrice);
                 
                 const change = ((newPrice - oldPrice) / oldPrice) * 100;
                 
-                // 최종 검증
                 const finalPrice = newPrice < 1000 ? 1000 : newPrice;
                 
                 updates[`stocks/${stock.symbol}/price`] = finalPrice;
                 updates[`stocks/${stock.symbol}/change`] = parseFloat(change.toFixed(2));
                 
-                // 히스토리 업데이트
                 const historyRef = database.ref(`stocks/${stock.symbol}/history_1M`);
                 const snapshot = await historyRef.once('value');
                 const historyData = snapshot.val();
@@ -1870,7 +1858,7 @@ function startPriceSimulation() {
             }
             
             await database.ref().update(updates);
-            console.log(`📈 주가 업데이트 완료 (최저가 ₩1,000 보장)`);
+            console.log(`📈 주가 업데이트 완료 (최저가 DM 1,000 보장)`);
             
         } catch (error) {
             console.error('❌ 주가 업데이트 실패:', error);
@@ -1909,11 +1897,11 @@ async function executeTransfer() {
     }
 
     if (!amount || amount < 1000) {
-        showToast('송금 금액은 최소 1,000원 이상이어야 합니다!', 'error');
+        showToast('송금 금액은 최소 DM 1,000 이상이어야 합니다!', 'error');
         return;
     }
 
-if (amount > userCash) {
+    if (amount > userCash) {
         showToast('현금이 부족합니다!', 'error');
         return;
     }
@@ -1937,7 +1925,7 @@ if (amount > userCash) {
 
         updateBalance();
         closeTransferModal();
-        showToast(`${recipientId}님께 ₩${amount.toLocaleString()} 송금 완료!`, 'success');
+        showToast(`${recipientId}님께 DM ${amount.toLocaleString()} 송금 완료!`, 'success');
         
         document.getElementById('recipientId').value = '';
         document.getElementById('transferAmount').value = '';
@@ -2021,7 +2009,7 @@ function renderAdminStockList() {
         <div class="stock-admin-item">
             <div style="flex: 1;">
                 <div style="font-weight: 700; color: var(--accent-blue);">${stock.symbol}</div>
-                <div style="font-size: 0.85rem; color: var(--text-secondary);">${stock.name} - ₩${stock.price.toLocaleString()}</div>
+                <div style="font-size: 0.85rem; color: var(--text-secondary);">${stock.name} - DM ${stock.price.toLocaleString()}</div>
             </div>
             <div style="display: flex; gap: 8px;">
                 <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-blue);" 
@@ -2057,7 +2045,7 @@ async function renderAdminUserList() {
                 <div class="stock-admin-item">
                     <div style="flex: 1;">
                         <div style="font-weight: 700; color: var(--accent-blue);">${userId}</div>
-                        <div style="font-size: 0.85rem; color: var(--text-secondary);">현금: ₩${cash.toLocaleString()}</div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary);">현금: DM ${cash.toLocaleString()}</div>
                     </div>
                     <div style="display: flex; gap: 8px;">
                         <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-green);" 
@@ -2102,7 +2090,7 @@ async function adminAddMoney(userId) {
             lastUpdate: new Date().toISOString()
         });
 
-        showToast(`${userId}님께 ₩${amount.toLocaleString()} 입금 완료!`, 'success');
+        showToast(`${userId}님께 DM ${amount.toLocaleString()} 입금 완료!`, 'success');
         renderAdminUserList();
     } catch (error) {
         console.error('입금 실패:', error);
@@ -2130,7 +2118,7 @@ async function adminWithdrawMoney(userId) {
         const currentCash = userData.cash || 10000000;
         
         if (amount > currentCash) {
-            if (!confirm(`${userId}님의 현금(₩${currentCash.toLocaleString()})보다 큰 금액입니다.\n\n강제로 출금하시겠습니까? (잔액이 음수가 될 수 있습니다)`)) {
+            if (!confirm(`${userId}님의 현금(DM ${currentCash.toLocaleString()})보다 큰 금액입니다.\n\n강제로 출금하시겠습니까? (잔액이 음수가 될 수 있습니다)`)) {
                 return;
             }
         }
@@ -2142,7 +2130,7 @@ async function adminWithdrawMoney(userId) {
             lastUpdate: new Date().toISOString()
         });
 
-        showToast(`${userId}님에게서 ₩${amount.toLocaleString()} 출금 완료!`, 'success');
+        showToast(`${userId}님에게서 DM ${amount.toLocaleString()} 출금 완료!`, 'success');
         renderAdminUserList();
     } catch (error) {
         console.error('출금 실패:', error);
@@ -2266,20 +2254,18 @@ async function deleteStock(symbol) {
     }
 }
 
-
-
 // ============================================
-// 🔥 관리자 주가 설정 (간단 버전)
+// 🔥 관리자 주가 설정
 // ============================================
 async function setStockPrice(symbol, name, currentPrice) {
-    const newPrice = prompt(`${name} (${symbol})의 새 주가를 입력하세요:\n\n현재 주가: ₩${currentPrice.toLocaleString()}\n최소 1,000원 이상`, currentPrice);
+    const newPrice = prompt(`${name} (${symbol})의 새 주가를 입력하세요:\n\n현재 주가: DM ${currentPrice.toLocaleString()}\n최소 1,000 이상`, currentPrice);
     
-    if (!newPrice) return; // 취소
+    if (!newPrice) return;
     
     const price = parseInt(newPrice);
     
     if (isNaN(price) || price < 1000) {
-        showToast('주가는 최소 1,000원 이상이어야 합니다!', 'error');
+        showToast('주가는 최소 DM 1,000 이상이어야 합니다!', 'error');
         return;
     }
 
@@ -2296,13 +2282,12 @@ async function setStockPrice(symbol, name, currentPrice) {
             change: parseFloat(change.toFixed(2))
         });
 
-        showToast(`${name} 주가 변경: ₩${currentPrice.toLocaleString()} → ₩${price.toLocaleString()}`, 'success');
+        showToast(`${name} 주가 변경: DM ${currentPrice.toLocaleString()} → DM ${price.toLocaleString()}`, 'success');
     } catch (error) {
         console.error('주가 변경 실패:', error);
         showToast('주가 변경 중 오류가 발생했습니다!', 'error');
     }
 }
-
 
 async function deleteMyAccount() {
     if (!confirm('⚠️ 정말로 계좌를 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없으며, 모든 데이터가 영구 삭제됩니다!')) {
