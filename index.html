@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Frankfurter Wertpapierbörse - 모의주식 플랫폼</title>
+    <title>프랑크푸르트 가상국가경제센터 - 증권거래소</title>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
     <style>
 * {
@@ -796,11 +796,11 @@ header {
         <header>
             <div style="display: flex; flex-direction: column; gap: 5px;">
                 <div class="logo">
-                    <img src="logo.png" alt="FWB Logo" class="logo-eagle">
-                    FRANKFURTER WERTPAPIERBÖRSE
+                    <img src="logo.png" alt="Logo" class="logo-eagle">
+                    프랑크푸르트 가상국가경제센터
                 </div>
                 <div style="font-size: 0.7rem; color: var(--text-secondary); font-weight: 400; letter-spacing: 0.5px;">
-                    Developed by Claude AI & Presented by E.W.Shosha
+                    증권거래소 · Developed by Claude AI &amp; Presented by E.W.Shosha
                 </div>
             </div>
             <div class="user-info">
@@ -817,6 +817,7 @@ header {
                     <div class="balance-amount" id="cashBalance">DM 10,000,000</div>
                 </div>
                 <div class="rank-badge">순위 #<span id="userRank">1</span></div>
+                <button class="transfer-btn" style="background: var(--accent-green); color: var(--bg-primary);" onclick="location.href='shop.html'">🛍️ 소비센터</button>
                 <button class="transfer-btn" onclick="openTransferModal()">계좌송금</button>
                 <button class="transfer-btn" style="background: var(--accent-red);" onclick="deleteMyAccount()">계좌삭제</button>
                 <button class="transfer-btn" style="background: var(--accent-purple);" onclick="logout()">로그아웃</button>
