@@ -911,6 +911,7 @@ header {
             <div class="admin-header">
                 <div class="panel-title">🔧 관리자 패널</div>
                 <button class="admin-btn" onclick="changeAdminPassword()">🔑 비밀번호 변경</button>
+                <button class="admin-btn danger" onclick="logoutAdmin()">🚪 관리자 로그아웃</button>
             </div>
             
             <div style="margin-bottom: 30px;">
@@ -1025,6 +1026,7 @@ header {
     <!-- Scripts -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script>
 // ============================================
@@ -1042,16 +1044,54 @@ const firebaseConfig = {
 };
 
 let database;
+let auth;
 try {
     firebase.initializeApp(firebaseConfig);
     database = firebase.database();
+    auth = firebase.auth();
     console.log('✅ Firebase 연결 성공!');
 } catch (error) {
     console.error('❌ Firebase 연결 실패:', error);
     alert('⚠️ Firebase 설정이 필요합니다!');
 }
 
-let ADMIN_PASSWORD = "admin1234";
+// ============================================
+// 🔐 관리자 인증 (Firebase Authentication 사용)
+// ------------------------------------------------
+// 비밀번호는 더 이상 이 파일 어디에도 저장되지 않습니다.
+// Firebase Console > Authentication 에서 만든 관리자 계정의
+// 이메일만 아래에 적어두면 되고, 실제 비밀번호 검증은
+// Firebase 서버가 처리합니다 (F12로 봐도 비밀번호는 안 보임).
+//
+// 사전 준비 (Firebase 콘솔에서 1회 설정):
+// 1) Authentication > Sign-in method > 이메일/비밀번호 사용 설정
+// 2) Authentication > Users > 관리자 계정 추가 (이메일 + 강력한 비밀번호)
+// 3) 생성된 사용자의 UID 복사
+// 4) Realtime Database에 admins 노드 추가: { "복사한UID": true }
+// 5) Realtime Database Rules에 관리자 전용 규칙 추가 (별도 안내 파일 참고)
+// ============================================
+const ADMIN_EMAIL = "admin@stock-game-c3cad.local"; // 콘솔에서 만든 관리자 계정 이메일로 교체
+let isAdminAuthenticated = false;
+let currentAdminUid = null;
+
+if (auth) {
+    auth.onAuthStateChanged(async (user) => {
+        if (user) {
+            try {
+                const adminSnap = await database.ref('admins/' + user.uid).once('value');
+                isAdminAuthenticated = adminSnap.val() === true;
+                currentAdminUid = user.uid;
+            } catch (e) {
+                isAdminAuthenticated = false;
+            }
+        } else {
+            isAdminAuthenticated = false;
+            currentAdminUid = null;
+            const panel = document.getElementById('adminPanel');
+            if (panel) panel.style.display = 'none';
+        }
+    });
+}
 
 // ============================================
 // 전역 변수 선언
@@ -1951,21 +1991,38 @@ function showToast(message, type = 'success') {
 // ============================================
 // 관리자 기능
 // ============================================
-function toggleAdmin() {
+async function toggleAdmin() {
     const panel = document.getElementById('adminPanel');
-    
+
     if (panel.style.display === 'none') {
-        const inputPassword = prompt('관리자 비밀번호를 입력하세요:');
-        
-        if (inputPassword === null) {
-            return;
-        }
-        
-        if (inputPassword === ADMIN_PASSWORD) {
+        // 이미 관리자로 로그인된 세션이면 바로 패널 오픈
+        if (isAdminAuthenticated) {
             panel.style.display = 'block';
             renderAdminUserList();
             showToast('관리자 모드 활성화!', 'success');
-        } else {
+            return;
+        }
+
+        const inputPassword = prompt('관리자 비밀번호를 입력하세요:');
+        if (inputPassword === null || inputPassword === '') return;
+
+        try {
+            const cred = await auth.signInWithEmailAndPassword(ADMIN_EMAIL, inputPassword);
+            const adminSnap = await database.ref('admins/' + cred.user.uid).once('value');
+
+            if (adminSnap.val() === true) {
+                isAdminAuthenticated = true;
+                currentAdminUid = cred.user.uid;
+                panel.style.display = 'block';
+                renderAdminUserList();
+                showToast('관리자 모드 활성화!', 'success');
+            } else {
+                // 인증은 됐지만 admins 목록에 없는 계정 → 관리자 권한 없음
+                await auth.signOut();
+                showToast('관리자 권한이 없는 계정입니다!', 'error');
+            }
+        } catch (error) {
+            console.error('관리자 로그인 실패:', error);
             showToast('비밀번호가 올바르지 않습니다!', 'error');
         }
     } else {
@@ -1973,30 +2030,48 @@ function toggleAdmin() {
     }
 }
 
-function changeAdminPassword() {
+async function changeAdminPassword() {
+    if (!isAdminAuthenticated || !auth.currentUser) {
+        showToast('관리자로 먼저 로그인하세요!', 'error');
+        return;
+    }
+
     const currentPassword = prompt('현재 비밀번호를 입력하세요:');
-    
-    if (currentPassword !== ADMIN_PASSWORD) {
-        showToast('현재 비밀번호가 올바르지 않습니다!', 'error');
-        return;
-    }
-    
+    if (!currentPassword) return;
+
     const newPassword = prompt('새 비밀번호를 입력하세요:');
-    
-    if (!newPassword || newPassword.length < 4) {
-        showToast('비밀번호는 최소 4자 이상이어야 합니다!', 'error');
+    if (!newPassword || newPassword.length < 6) {
+        showToast('비밀번호는 최소 6자 이상이어야 합니다! (Firebase 최소 기준)', 'error');
         return;
     }
-    
+
     const confirmPassword = prompt('새 비밀번호를 다시 입력하세요:');
-    
     if (newPassword !== confirmPassword) {
         showToast('비밀번호가 일치하지 않습니다!', 'error');
         return;
     }
-    
-    ADMIN_PASSWORD = newPassword;
-    showToast('비밀번호가 변경되었습니다!', 'success');
+
+    try {
+        // 비밀번호 변경 같은 민감한 작업 전에는 재인증이 필요합니다
+        const credential = firebase.auth.EmailAuthProvider.credential(ADMIN_EMAIL, currentPassword);
+        await auth.currentUser.reauthenticateWithCredential(credential);
+        await auth.currentUser.updatePassword(newPassword);
+        showToast('비밀번호가 변경되었습니다!', 'success');
+    } catch (error) {
+        console.error('비밀번호 변경 실패:', error);
+        if (error.code === 'auth/wrong-password') {
+            showToast('현재 비밀번호가 올바르지 않습니다!', 'error');
+        } else {
+            showToast('비밀번호 변경 실패: ' + error.message, 'error');
+        }
+    }
+}
+
+function logoutAdmin() {
+    if (auth) auth.signOut();
+    const panel = document.getElementById('adminPanel');
+    if (panel) panel.style.display = 'none';
+    showToast('관리자 로그아웃 되었습니다.', 'success');
 }
 
 function renderAdminStockList() {
