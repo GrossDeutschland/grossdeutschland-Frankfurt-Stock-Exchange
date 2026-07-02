@@ -299,7 +299,7 @@ header {
 
         <!-- Admin Panel -->
         <div class="admin-panel" id="adminPanel" style="display: none;">
-            <div class="panel-title">🔧 관리자 패널</div>
+            <div class="panel-title">🔧 관리자 패널 <button class="admin-btn" style="float:right; padding:6px 14px; font-size:0.8rem; background:#e74c3c;" onclick="logoutAdmin()">🚪 로그아웃</button></div>
             <div class="admin-tabs">
                 <div class="admin-tab active" onclick="switchAdminTab('country')">🌍 국가 관리</div>
                 <div class="admin-tab" onclick="switchAdminTab('theme')">🏷️ 테마 관리</div>
@@ -486,6 +486,7 @@ header {
 
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script>
 // ============================================
 // Firebase 설정 (증권거래소와 동일한 프로젝트/사용자/현금 공유)
@@ -502,16 +503,43 @@ const firebaseConfig = {
 };
 
 let database;
+let auth;
 try {
     firebase.initializeApp(firebaseConfig);
     database = firebase.database();
+    auth = firebase.auth();
     console.log('✅ Firebase 연결 성공!');
 } catch (error) {
     console.error('❌ Firebase 연결 실패:', error);
     alert('⚠️ Firebase 설정이 필요합니다!');
 }
 
-let ADMIN_PASSWORD = "admin1234";
+// ============================================
+// 🔐 관리자 인증 (Firebase Authentication 사용, 증권거래소 앱과 동일 계정 공유)
+// index.html과 같은 Firebase 프로젝트를 쓰므로, 같은 admins/UID 로 관리됩니다.
+// ============================================
+const ADMIN_EMAIL = "admin@stock-game-c3cad.local"; // 콘솔에서 만든 관리자 계정 이메일로 교체
+let isAdminAuthenticated = false;
+let currentAdminUid = null;
+
+if (auth) {
+    auth.onAuthStateChanged(async (user) => {
+        if (user) {
+            try {
+                const adminSnap = await database.ref('admins/' + user.uid).once('value');
+                isAdminAuthenticated = adminSnap.val() === true;
+                currentAdminUid = user.uid;
+            } catch (e) {
+                isAdminAuthenticated = false;
+            }
+        } else {
+            isAdminAuthenticated = false;
+            currentAdminUid = null;
+            const panel = document.getElementById('adminPanel');
+            if (panel) panel.style.display = 'none';
+        }
+    });
+}
 
 // ============================================
 // 전역 상태
@@ -952,23 +980,51 @@ function showToast(message, type = 'success') {
 // ============================================
 // 관리자: 패널 토글 / 탭
 // ============================================
-function toggleAdmin() {
+async function toggleAdmin() {
     const panel = document.getElementById('adminPanel');
     if (panel.style.display === 'none') {
-        const inputPassword = prompt('관리자 비밀번호를 입력하세요:');
-        if (inputPassword === null) return;
-        if (inputPassword === ADMIN_PASSWORD) {
+        if (isAdminAuthenticated) {
             panel.style.display = 'block';
             renderAdminCountryList();
             populateAdminCountrySelects();
             renderAdminUserList();
             showToast('관리자 모드 활성화!', 'success');
-        } else {
+            return;
+        }
+
+        const inputPassword = prompt('관리자 비밀번호를 입력하세요:');
+        if (inputPassword === null || inputPassword === '') return;
+
+        try {
+            const cred = await auth.signInWithEmailAndPassword(ADMIN_EMAIL, inputPassword);
+            const adminSnap = await database.ref('admins/' + cred.user.uid).once('value');
+
+            if (adminSnap.val() === true) {
+                isAdminAuthenticated = true;
+                currentAdminUid = cred.user.uid;
+                panel.style.display = 'block';
+                renderAdminCountryList();
+                populateAdminCountrySelects();
+                renderAdminUserList();
+                showToast('관리자 모드 활성화!', 'success');
+            } else {
+                await auth.signOut();
+                showToast('관리자 권한이 없는 계정입니다!', 'error');
+            }
+        } catch (error) {
+            console.error('관리자 로그인 실패:', error);
             showToast('비밀번호가 올바르지 않습니다!', 'error');
         }
     } else {
         panel.style.display = 'none';
     }
+}
+
+function logoutAdmin() {
+    if (auth) auth.signOut();
+    const panel = document.getElementById('adminPanel');
+    if (panel) panel.style.display = 'none';
+    showToast('관리자 로그아웃 되었습니다.', 'success');
 }
 
 function switchAdminTab(tab) {
