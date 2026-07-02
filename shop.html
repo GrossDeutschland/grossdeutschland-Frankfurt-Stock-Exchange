@@ -1,0 +1,1448 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>프랑크푸르트 가상국가경제센터 - 소비센터</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+    <style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+    --bg-primary: #0a0e1a;
+    --bg-secondary: #121826;
+    --bg-tertiary: #1a2234;
+    --accent-green: #00ff88;
+    --accent-red: #ff3366;
+    --accent-blue: #00d4ff;
+    --accent-purple: #a855f7;
+    --accent-gold: #ffd700;
+    --text-primary: #e8edf4;
+    --text-secondary: #8b95a8;
+    --border-color: #2a3547;
+    --glow-green: rgba(0, 255, 136, 0.3);
+    --glow-red: rgba(255, 51, 102, 0.3);
+    --glow-blue: rgba(0, 212, 255, 0.3);
+    --glow-gold: rgba(255, 215, 0, 0.3);
+}
+
+body {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    overflow-x: hidden;
+    line-height: 1.6;
+}
+
+.bg-grid {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background-image:
+        linear-gradient(rgba(42, 53, 71, 0.3) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(42, 53, 71, 0.3) 1px, transparent 1px);
+    background-size: 50px 50px;
+    animation: gridMove 20s linear infinite;
+    pointer-events: none; z-index: 0;
+}
+@keyframes gridMove { 0% { transform: translate(0,0); } 100% { transform: translate(50px,50px); } }
+
+.container { position: relative; z-index: 1; max-width: 1600px; margin: 0 auto; padding: 20px; }
+
+header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 30px 0; border-bottom: 1px solid var(--border-color); margin-bottom: 30px;
+    animation: slideDown 0.8s ease; flex-wrap: wrap; gap: 20px;
+}
+@keyframes slideDown { from { transform: translateY(-50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+.logo {
+    font-family: 'Orbitron', sans-serif; font-size: 1.5rem; font-weight: 900;
+    color: var(--text-primary); letter-spacing: 2px; display: flex; align-items: center; gap: 15px;
+}
+.logo-icon {
+    width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-size: 1.8rem; background: var(--bg-tertiary);
+    border: 2px solid var(--accent-gold); box-shadow: 0 0 15px var(--glow-gold);
+}
+
+.user-info { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.balance { text-align: right; }
+.balance-label { font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; }
+.balance-amount { font-size: 1.3rem; font-weight: 700; color: var(--accent-green); text-shadow: 0 0 20px var(--glow-green); }
+
+.nav-btn {
+    padding: 12px 20px; border: none; border-radius: 8px; color: var(--bg-primary);
+    font-family: 'JetBrains Mono', monospace; font-weight: 600; cursor: pointer;
+    transition: all 0.3s; background: var(--accent-blue); box-shadow: 0 5px 20px var(--glow-blue);
+}
+.nav-btn:hover { transform: translateY(-2px); }
+.nav-btn.purple { background: var(--accent-purple); color: white; box-shadow: 0 5px 20px rgba(168,85,247,0.3); }
+.nav-btn.red { background: var(--accent-red); color: white; box-shadow: 0 5px 20px var(--glow-red); }
+
+.panel-title {
+    font-family: 'Orbitron', sans-serif; font-size: 0.9rem; color: var(--accent-blue);
+    margin-bottom: 20px; text-transform: uppercase; letter-spacing: 2px;
+    border-bottom: 2px solid var(--accent-blue); padding-bottom: 10px;
+}
+
+.dashboard { display: grid; grid-template-columns: 260px 1fr 320px; gap: 20px; animation: fadeIn 1s ease; align-items: start; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.panel {
+    background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px;
+    padding: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.country-list { max-height: calc(100vh - 200px); overflow-y: auto; }
+.country-tab {
+    padding: 15px; margin-bottom: 10px; background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    border-radius: 8px; cursor: pointer; transition: all 0.3s; display: flex; align-items: center; gap: 10px;
+}
+.country-tab:hover { border-color: var(--accent-gold); transform: translateX(5px); }
+.country-tab.active { border-color: var(--accent-gold); background: linear-gradient(90deg, var(--bg-tertiary), rgba(255,215,0,0.1)); }
+.country-flag { font-size: 1.4rem; }
+.country-tab-name { font-weight: 700; }
+.country-tab-meta { font-size: 0.7rem; color: var(--text-secondary); }
+
+.theme-section { margin-bottom: 30px; }
+.theme-header {
+    font-family: 'Orbitron', sans-serif; font-size: 1rem; color: var(--accent-gold);
+    margin-bottom: 15px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color);
+    display: flex; align-items: center; gap: 8px;
+}
+.item-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; }
+.item-card {
+    background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 10px;
+    padding: 16px; transition: all 0.3s; display: flex; flex-direction: column; gap: 10px;
+}
+.item-card:hover { border-color: var(--accent-gold); box-shadow: 0 8px 24px var(--glow-gold); transform: translateY(-3px); }
+.item-image {
+    width: 100%; height: 110px; border-radius: 8px; object-fit: cover; background: var(--bg-secondary);
+}
+.item-name { font-weight: 700; font-size: 0.95rem; }
+.item-desc { font-size: 0.75rem; color: var(--text-secondary); min-height: 30px; }
+.item-price { font-size: 1.1rem; font-weight: 700; color: var(--accent-green); }
+.item-buy-row { display: flex; gap: 8px; }
+.item-qty {
+    width: 60px; padding: 8px; background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: 6px; color: var(--text-primary); font-family: 'JetBrains Mono', monospace; text-align: center;
+}
+.item-buy-btn {
+    flex: 1; padding: 8px; border: none; border-radius: 6px; background: var(--accent-green);
+    color: var(--bg-primary); font-weight: 700; cursor: pointer; transition: all 0.3s;
+}
+.item-buy-btn:hover { box-shadow: 0 5px 15px var(--glow-green); transform: translateY(-2px); }
+
+.empty-state { text-align: center; color: var(--text-secondary); padding: 60px 20px; }
+.empty-state-icon { font-size: 3rem; margin-bottom: 10px; }
+
+.inventory-item {
+    background: var(--bg-tertiary); padding: 12px; border-radius: 8px; margin-bottom: 10px;
+    border: 1px solid var(--border-color);
+}
+.inventory-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
+.inventory-name { font-weight: 700; color: var(--accent-gold); }
+.inventory-qty { font-size: 0.85rem; color: var(--text-secondary); }
+.inventory-meta { font-size: 0.7rem; color: var(--text-secondary); margin-bottom: 8px; }
+.gift-btn {
+    width: 100%; padding: 8px; border: none; border-radius: 6px; background: var(--accent-purple);
+    color: white; font-weight: 600; cursor: pointer; transition: all 0.3s; font-size: 0.8rem;
+}
+.gift-btn:hover { box-shadow: 0 5px 15px rgba(168,85,247,0.4); }
+
+.input-group { margin-bottom: 18px; }
+.input-label {
+    display: block; font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 8px;
+    text-transform: uppercase; letter-spacing: 1px;
+}
+.input-field {
+    width: 100%; padding: 14px; background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    border-radius: 8px; color: var(--text-primary); font-family: 'JetBrains Mono', monospace; font-size: 1rem;
+    transition: all 0.3s;
+}
+.input-field:focus { outline: none; border-color: var(--accent-blue); box-shadow: 0 0 15px var(--glow-blue); }
+
+.execute-btn {
+    width: 100%; padding: 16px; border: none; border-radius: 8px; font-family: 'Orbitron', sans-serif;
+    font-size: 1rem; font-weight: 700; cursor: pointer; transition: all 0.3s; text-transform: uppercase;
+    letter-spacing: 2px; background: var(--accent-green); color: var(--bg-primary); box-shadow: 0 5px 20px var(--glow-green);
+}
+.execute-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px var(--glow-green); }
+.execute-btn.purple { background: var(--accent-purple); color: white; box-shadow: 0 5px 20px rgba(168,85,247,0.3); }
+
+.modal {
+    display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.8); backdrop-filter: blur(10px); z-index: 1000;
+    align-items: center; justify-content: center;
+}
+.modal.active { display: flex; }
+.modal-content {
+    background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px;
+    padding: 30px; max-width: 460px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    animation: modalSlide 0.3s ease; position: relative; max-height: 85vh; overflow-y: auto;
+}
+@keyframes modalSlide { from { transform: translateY(-50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.modal-header { font-family: 'Orbitron', sans-serif; font-size: 1.3rem; margin-bottom: 20px; color: var(--accent-blue); }
+.modal-close {
+    position: absolute; top: 20px; right: 20px; background: none; border: none;
+    color: var(--text-secondary); font-size: 1.5rem; cursor: pointer; transition: all 0.3s;
+}
+.modal-close:hover { color: var(--accent-red); transform: rotate(90deg); }
+.modal-summary { background: var(--bg-tertiary); padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--border-color); }
+.summary-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem; }
+.summary-row:last-child { margin-bottom: 0; padding-top: 8px; border-top: 1px solid var(--border-color); font-weight: 700; }
+
+.admin-panel {
+    background: var(--bg-secondary); border: 1px solid var(--accent-purple); border-radius: 12px;
+    padding: 20px; margin-top: 30px; box-shadow: 0 8px 32px rgba(168,85,247,0.3);
+}
+.admin-tabs { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+.admin-tab {
+    padding: 10px 18px; background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: all 0.3s;
+}
+.admin-tab.active { background: var(--accent-purple); color: white; border-color: var(--accent-purple); }
+.admin-section { display: none; }
+.admin-section.active { display: block; }
+.admin-btn {
+    padding: 10px 20px; background: var(--accent-purple); border: none; border-radius: 6px; color: white;
+    font-family: 'JetBrains Mono', monospace; font-weight: 600; cursor: pointer; transition: all 0.3s; font-size: 0.85rem;
+}
+.admin-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(168,85,247,0.5); }
+.admin-list-item {
+    display: flex; justify-content: space-between; align-items: center; padding: 12px;
+    background: var(--bg-tertiary); border-radius: 6px; margin-bottom: 10px; border: 1px solid var(--border-color);
+    flex-wrap: wrap; gap: 8px;
+}
+.delete-btn {
+    padding: 6px 12px; background: var(--accent-red); border: none; border-radius: 4px; color: white;
+    cursor: pointer; font-size: 0.8rem; transition: all 0.3s;
+}
+.delete-btn:hover { box-shadow: 0 3px 10px var(--glow-red); }
+.admin-form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 15px; }
+
+.admin-toggle {
+    position: fixed; top: 20px; right: 20px; padding: 10px 20px; background: var(--accent-purple);
+    border: none; border-radius: 20px; color: white; font-family: 'JetBrains Mono', monospace;
+    font-weight: 600; cursor: pointer; z-index: 100; transition: all 0.3s;
+}
+.admin-toggle:hover { box-shadow: 0 5px 20px rgba(168,85,247,0.5); }
+
+.toast {
+    position: fixed; bottom: 30px; right: 30px; background: var(--bg-secondary); border: 1px solid var(--accent-green);
+    border-radius: 8px; padding: 16px 24px; box-shadow: 0 10px 40px var(--glow-green); display: none;
+    animation: toastSlide 0.4s ease; z-index: 2000;
+}
+.toast.active { display: block; }
+@keyframes toastSlide { from { transform: translateX(400px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-tertiary); }
+::-webkit-scrollbar-thumb { background: var(--accent-gold); border-radius: 4px; }
+
+@media (max-width: 1200px) {
+    .dashboard { grid-template-columns: 1fr; }
+    .country-list { max-height: 300px; }
+}
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+
+    <div class="container">
+        <header>
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+                <div class="logo">
+                    <div class="logo-icon">🛍️</div>
+                    프랑크푸르트 가상국가경제센터
+                </div>
+                <div style="font-size: 0.7rem; color: var(--text-secondary); font-weight: 400; letter-spacing: 0.5px;">
+                    소비센터 · Developed by Claude AI &amp; Presented by E.W.Shosha
+                </div>
+            </div>
+            <div class="user-info">
+                <div class="balance">
+                    <div class="balance-label">사용자</div>
+                    <div style="font-size: 1.1rem; font-weight: 600; color: var(--accent-blue);" id="currentUserId">Guest</div>
+                </div>
+                <div class="balance">
+                    <div class="balance-label">현금</div>
+                    <div class="balance-amount" id="cashBalance">DM 10,000,000</div>
+                </div>
+                <button class="nav-btn" onclick="location.href='stock.html'">📊 증권거래소</button>
+                <button class="nav-btn purple" onclick="logout()">로그아웃</button>
+            </div>
+        </header>
+
+        <button class="admin-toggle" onclick="toggleAdmin()">🔧 관리자 모드</button>
+
+        <div class="dashboard">
+            <!-- Country List -->
+            <div class="panel country-list">
+                <div class="panel-title">🌍 국가</div>
+                <div id="countryListContainer"></div>
+            </div>
+
+            <!-- Store -->
+            <div class="panel">
+                <div class="panel-title" id="storeTitle">🛒 상점</div>
+                <div id="storeContainer"></div>
+            </div>
+
+            <!-- My Inventory -->
+            <div class="panel">
+                <div class="panel-title">🎒 내 보관함</div>
+                <div id="inventoryContainer">
+                    <div style="text-align: center; color: var(--text-secondary); padding: 20px;">보유 물품이 없습니다</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Panel -->
+        <div class="admin-panel" id="adminPanel" style="display: none;">
+            <div class="panel-title">🔧 관리자 패널</div>
+            <div class="admin-tabs">
+                <div class="admin-tab active" onclick="switchAdminTab('country')">🌍 국가 관리</div>
+                <div class="admin-tab" onclick="switchAdminTab('theme')">🏷️ 테마 관리</div>
+                <div class="admin-tab" onclick="switchAdminTab('item')">📦 상품 관리</div>
+                <div class="admin-tab" onclick="switchAdminTab('user')">👥 사용자 관리</div>
+            </div>
+
+            <!-- Country admin -->
+            <div class="admin-section active" id="adminSection-country">
+                <div class="admin-form-grid">
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">국가명</label>
+                        <input type="text" class="input-field" id="newCountryName" placeholder="예: 대한민국">
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">국기 이모지 (선택)</label>
+                        <input type="text" class="input-field" id="newCountryFlag" placeholder="🇰🇷">
+                    </div>
+                </div>
+                <button class="admin-btn" onclick="addCountry()">+ 국가 추가</button>
+                <div style="margin-top: 20px;" id="adminCountryList"></div>
+            </div>
+
+            <!-- Theme admin -->
+            <div class="admin-section" id="adminSection-theme">
+                <div class="admin-form-grid">
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">국가 선택</label>
+                        <select class="input-field" id="themeCountrySelect" onchange="renderAdminThemeList()"></select>
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">테마명</label>
+                        <input type="text" class="input-field" id="newThemeName" placeholder="예: 전자제품">
+                    </div>
+                </div>
+                <button class="admin-btn" onclick="addTheme()">+ 테마 추가</button>
+                <div style="margin-top: 20px;" id="adminThemeList"></div>
+            </div>
+
+            <!-- Item admin -->
+            <div class="admin-section" id="adminSection-item">
+                <div class="admin-form-grid">
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">국가 선택</label>
+                        <select class="input-field" id="itemCountrySelect" onchange="onItemCountryChange()"></select>
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">테마 선택</label>
+                        <select class="input-field" id="itemThemeSelect" onchange="renderAdminItemList()"></select>
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">상품명</label>
+                        <input type="text" class="input-field" id="newItemName" placeholder="예: 스마트폰">
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">가격 (DM)</label>
+                        <input type="number" class="input-field" id="newItemPrice" placeholder="50000" value="50000">
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">설명 (선택)</label>
+                        <input type="text" class="input-field" id="newItemDesc" placeholder="간단한 설명">
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">이미지 URL (선택)</label>
+                        <input type="text" class="input-field" id="newItemImage" placeholder="https://...">
+                    </div>
+                </div>
+                <button class="admin-btn" onclick="addItem()">+ 상품 추가</button>
+                <div style="margin-top: 20px;" id="adminItemList"></div>
+            </div>
+
+            <!-- User admin -->
+            <div class="admin-section" id="adminSection-user">
+                <div class="admin-form-grid">
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">새 사용자 ID</label>
+                        <input type="text" class="input-field" id="newUserId" placeholder="4자 이상">
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">비밀번호</label>
+                        <input type="password" class="input-field" id="newUserPassword" placeholder="4자 이상">
+                    </div>
+                </div>
+                <button class="admin-btn" onclick="adminCreateUser()">+ 사용자 추가</button>
+                <div style="margin-top: 20px;" id="adminUserList"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Buy Modal -->
+    <div class="modal" id="buyModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('buyModal')">×</button>
+            <div class="modal-header">🛒 구매하기</div>
+            <div class="modal-summary" id="buySummary"></div>
+            <div class="input-group">
+                <label class="input-label">수량</label>
+                <input type="number" class="input-field" id="buyQuantity" value="1" min="1" oninput="updateBuySummary()">
+            </div>
+            <button class="execute-btn" onclick="confirmBuy()">구매 확정</button>
+        </div>
+    </div>
+
+    <!-- Gift Modal -->
+    <div class="modal" id="giftModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('giftModal')">×</button>
+            <div class="modal-header">🎁 선물하기</div>
+            <div class="modal-summary" id="giftSummary"></div>
+            <div class="input-group">
+                <label class="input-label">받는 사람 ID</label>
+                <input type="text" class="input-field" id="giftRecipient" placeholder="사용자 ID 입력">
+            </div>
+            <div class="input-group">
+                <label class="input-label">수량</label>
+                <input type="number" class="input-field" id="giftQuantity" value="1" min="1">
+            </div>
+            <button class="execute-btn purple" onclick="confirmGift()">선물 보내기</button>
+        </div>
+    </div>
+
+    <!-- Admin Inventory Edit Modal -->
+    <div class="modal" id="adminInventoryModal">
+        <div class="modal-content" style="max-width: 560px;">
+            <button class="modal-close" onclick="closeModal('adminInventoryModal')">×</button>
+            <div class="modal-header">📦 <span id="adminInventoryUserLabel"></span>님 보유물품 수정</div>
+
+            <div id="adminInventoryCurrentList" style="margin-bottom: 20px;"></div>
+
+            <div style="border-top: 1px solid var(--border-color); padding-top: 20px;">
+                <div class="input-label" style="margin-bottom: 10px;">상품 추가 / 지급</div>
+                <div class="admin-form-grid">
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">상품 선택</label>
+                        <select class="input-field" id="adminInventoryItemSelect"></select>
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">수량</label>
+                        <input type="number" class="input-field" id="adminInventoryAddQty" value="1" min="1">
+                    </div>
+                </div>
+                <button class="admin-btn" onclick="adminAddInventoryItem()">+ 지급하기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <!-- Login Modal -->
+    <div class="modal" id="loginModal" style="display: flex;">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header" id="authTitle">로그인</div>
+            <div id="loginForm">
+                <div class="input-group">
+                    <label class="input-label">사용자 ID</label>
+                    <input type="text" class="input-field" id="loginUserId" placeholder="ID 입력">
+                </div>
+                <div class="input-group">
+                    <label class="input-label">비밀번호</label>
+                    <input type="password" class="input-field" id="loginPassword" placeholder="비밀번호 입력">
+                </div>
+                <button class="execute-btn" onclick="loginUser()" style="margin-bottom: 10px;">로그인</button>
+                <button class="execute-btn purple" onclick="switchToSignup()">회원가입</button>
+            </div>
+            <div id="signupForm" style="display: none;">
+                <div class="input-group">
+                    <label class="input-label">사용자 ID</label>
+                    <input type="text" class="input-field" id="signupUserId" placeholder="ID 입력 (4자 이상)">
+                </div>
+                <div class="input-group">
+                    <label class="input-label">비밀번호</label>
+                    <input type="password" class="input-field" id="signupPassword" placeholder="비밀번호 입력 (4자 이상)">
+                </div>
+                <div class="input-group">
+                    <label class="input-label">비밀번호 확인</label>
+                    <input type="password" class="input-field" id="signupPasswordConfirm" placeholder="비밀번호 재입력">
+                </div>
+                <button class="execute-btn" onclick="signupUser()" style="margin-bottom: 10px;">회원가입</button>
+                <button class="execute-btn purple" onclick="switchToLogin()" style="background: var(--text-secondary);">로그인으로 돌아가기</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script>
+// ============================================
+// Firebase 설정 (증권거래소와 동일한 프로젝트/사용자/현금 공유)
+// ============================================
+const firebaseConfig = {
+    apiKey: "AIzaSyDczRJGqLpJ9xlLWPTFkOZU2tC3tMRvA1U",
+    authDomain: "stock-game-c3cad.firebaseapp.com",
+    databaseURL: "https://stock-game-c3cad-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "stock-game-c3cad",
+    storageBucket: "stock-game-c3cad.firebasestorage.app",
+    messagingSenderId: "638224580097",
+    appId: "1:638224580097:web:010c218bdc3460e57a8a00",
+    measurementId: "G-CKBNG8ZXYQ"
+};
+
+let database;
+try {
+    firebase.initializeApp(firebaseConfig);
+    database = firebase.database();
+    console.log('✅ Firebase 연결 성공!');
+} catch (error) {
+    console.error('❌ Firebase 연결 실패:', error);
+    alert('⚠️ Firebase 설정이 필요합니다!');
+}
+
+let ADMIN_PASSWORD = "admin1234";
+
+// ============================================
+// 전역 상태
+// ============================================
+let currentUser = null;
+let userCash = 10000000;
+let inventory = {};          // { itemId: {name, price, countryName, themeName, quantity} }
+let countries = {};          // { countryId: {id, name, flag} }
+let themes = {};             // { themeId: {id, countryId, name} }
+let items = {};              // { itemId: {id, themeId, countryId, name, price, description, image} }
+let selectedCountryId = null;
+let pendingBuyItemId = null;
+let pendingGiftItemId = null;
+
+// ============================================
+// 초기화
+// ============================================
+async function init() {
+    subscribeToCatalog();
+
+    const savedUser = localStorage.getItem('fwb_currentUser');
+    if (savedUser && database) {
+        currentUser = savedUser;
+        await loadUserData();
+        document.getElementById('loginModal').style.display = 'none';
+    } else {
+        document.getElementById('loginModal').style.display = 'flex';
+    }
+}
+
+function subscribeToCatalog() {
+    if (!database) return;
+
+    database.ref('shop_countries').on('value', (snapshot) => {
+        countries = snapshot.val() || {};
+        if (!selectedCountryId) {
+            const ids = Object.keys(countries);
+            if (ids.length > 0) selectedCountryId = ids[0];
+        }
+        renderCountryList();
+        renderStore();
+        populateAdminCountrySelects();
+    });
+
+    database.ref('shop_themes').on('value', (snapshot) => {
+        themes = snapshot.val() || {};
+        renderStore();
+        populateAdminCountrySelects();
+    });
+
+    database.ref('shop_items').on('value', (snapshot) => {
+        items = snapshot.val() || {};
+        renderStore();
+    });
+}
+
+async function loadUserData() {
+    if (!currentUser || !database) {
+        currentUser = null;
+        userCash = 10000000;
+        inventory = {};
+        return;
+    }
+
+    database.ref('users/' + currentUser).on('value', (snapshot) => {
+        const userData = snapshot.val();
+        if (!userData) {
+            userCash = 10000000;
+            inventory = {};
+        } else {
+            userCash = userData.cash !== undefined ? userData.cash : 10000000;
+            inventory = userData.inventory || {};
+        }
+        document.getElementById('currentUserId').textContent = currentUser;
+        updateBalance();
+        renderInventory();
+    });
+}
+
+// ============================================
+// 로그인 / 회원가입 / 로그아웃 (증권거래소와 계정 공유)
+// ============================================
+async function loginUser() {
+    const userId = document.getElementById('loginUserId').value.trim();
+    const password = document.getElementById('loginPassword').value;
+
+    if (!userId || !password) { showToast('ID와 비밀번호를 입력하세요!', 'error'); return; }
+    if (!database) { showToast('Firebase 연결이 필요합니다!', 'error'); return; }
+
+    try {
+        const snapshot = await database.ref('users/' + userId).once('value');
+        const userData = snapshot.val();
+
+        if (!userData) { showToast('존재하지 않는 사용자입니다!', 'error'); return; }
+        if (userData.password !== password) { showToast('비밀번호가 올바르지 않습니다!', 'error'); return; }
+
+        currentUser = userId;
+        localStorage.setItem('fwb_currentUser', userId);
+        await loadUserData();
+
+        document.getElementById('loginModal').style.display = 'none';
+        document.getElementById('loginUserId').value = '';
+        document.getElementById('loginPassword').value = '';
+
+        showToast(`환영합니다, ${userId}님!`, 'success');
+    } catch (error) {
+        console.error('로그인 실패:', error);
+        showToast('로그인 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+async function signupUser() {
+    const userId = document.getElementById('signupUserId').value.trim();
+    const password = document.getElementById('signupPassword').value;
+    const passwordConfirm = document.getElementById('signupPasswordConfirm').value;
+
+    if (!userId || userId.length < 4) { showToast('ID는 4자 이상이어야 합니다!', 'error'); return; }
+    if (!password || password.length < 4) { showToast('비밀번호는 4자 이상이어야 합니다!', 'error'); return; }
+    if (password !== passwordConfirm) { showToast('비밀번호가 일치하지 않습니다!', 'error'); return; }
+    if (!database) { showToast('Firebase 연결이 필요합니다!', 'error'); return; }
+
+    try {
+        const snapshot = await database.ref('users/' + userId).once('value');
+        if (snapshot.exists()) { showToast('이미 존재하는 ID입니다!', 'error'); return; }
+
+        await database.ref('users/' + userId).set({
+            password: password,
+            cash: 10000000,
+            portfolio: {},
+            inventory: {},
+            createdAt: new Date().toISOString()
+        });
+
+        showToast('회원가입 성공! 로그인해주세요.', 'success');
+        document.getElementById('signupUserId').value = '';
+        document.getElementById('signupPassword').value = '';
+        document.getElementById('signupPasswordConfirm').value = '';
+        switchToLogin();
+    } catch (error) {
+        console.error('회원가입 실패:', error);
+        showToast('회원가입 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+function logout() {
+    if (!confirm('로그아웃 하시겠습니까?')) return;
+    currentUser = null;
+    localStorage.removeItem('fwb_currentUser');
+    location.reload();
+}
+
+function switchToSignup() {
+    document.getElementById('loginForm').style.display = 'none';
+    document.getElementById('signupForm').style.display = 'block';
+    document.getElementById('authTitle').textContent = '회원가입';
+}
+function switchToLogin() {
+    document.getElementById('signupForm').style.display = 'none';
+    document.getElementById('loginForm').style.display = 'block';
+    document.getElementById('authTitle').textContent = '로그인';
+}
+
+// ============================================
+// 국가 / 상점 렌더링
+// ============================================
+function renderCountryList() {
+    const container = document.getElementById('countryListContainer');
+    const countryIds = Object.keys(countries);
+
+    if (countryIds.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:20px;">등록된 국가가 없습니다</div>';
+        return;
+    }
+
+    container.innerHTML = countryIds.map(id => {
+        const c = countries[id];
+        const themeCount = Object.values(themes).filter(t => t.countryId === id).length;
+        return `
+            <div class="country-tab ${id === selectedCountryId ? 'active' : ''}" onclick="selectCountry('${id}')">
+                <span class="country-flag">${c.flag || '🏳️'}</span>
+                <div>
+                    <div class="country-tab-name">${c.name}</div>
+                    <div class="country-tab-meta">${themeCount}개 테마</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function selectCountry(countryId) {
+    selectedCountryId = countryId;
+    renderCountryList();
+    renderStore();
+}
+
+function renderStore() {
+    const container = document.getElementById('storeContainer');
+    const titleEl = document.getElementById('storeTitle');
+
+    if (!selectedCountryId || !countries[selectedCountryId]) {
+        titleEl.textContent = '🛒 상점';
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">🌍</div>
+                등록된 국가가 없습니다.<br>관리자 모드에서 국가를 추가해보세요.
+            </div>
+        `;
+        return;
+    }
+
+    const country = countries[selectedCountryId];
+    titleEl.textContent = `${country.flag || '🏳️'} ${country.name}`;
+
+    const countryThemes = Object.values(themes).filter(t => t.countryId === selectedCountryId);
+
+    if (countryThemes.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">🏷️</div>
+                이 국가에는 아직 테마가 없습니다.<br>관리자 모드에서 테마를 추가해보세요.
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = countryThemes.map(theme => {
+        const themeItems = Object.values(items).filter(i => i.themeId === theme.id);
+        const itemsHtml = themeItems.length === 0
+            ? '<div style="color:var(--text-secondary);font-size:0.85rem;padding:10px 0;">이 테마에는 아직 상품이 없습니다.</div>'
+            : `<div class="item-grid">${themeItems.map(renderItemCard).join('')}</div>`;
+
+        return `
+            <div class="theme-section">
+                <div class="theme-header">🏷️ ${theme.name}</div>
+                ${itemsHtml}
+            </div>
+        `;
+    }).join('');
+}
+
+function renderItemCard(item) {
+    const imageHtml = item.image
+        ? `<img src="${item.image}" class="item-image" alt="${item.name}" onerror="this.style.display='none'">`
+        : '';
+    return `
+        <div class="item-card">
+            ${imageHtml}
+            <div class="item-name">${item.name}</div>
+            <div class="item-desc">${item.description || ''}</div>
+            <div class="item-price">DM ${item.price.toLocaleString()}</div>
+            <div class="item-buy-row">
+                <input type="number" class="item-qty" id="qty-${item.id}" value="1" min="1">
+                <button class="item-buy-btn" onclick="openBuyModal('${item.id}')">구매</button>
+            </div>
+        </div>
+    `;
+}
+
+// ============================================
+// 구매 로직
+// ============================================
+function openBuyModal(itemId) {
+    if (!currentUser) { showToast('로그인이 필요합니다!', 'error'); return; }
+    const item = items[itemId];
+    if (!item) return;
+
+    pendingBuyItemId = itemId;
+    const qtyInput = document.getElementById(`qty-${itemId}`);
+    document.getElementById('buyQuantity').value = qtyInput ? qtyInput.value : 1;
+    updateBuySummary();
+    document.getElementById('buyModal').classList.add('active');
+}
+
+function updateBuySummary() {
+    const item = items[pendingBuyItemId];
+    if (!item) return;
+    const qty = Math.max(1, parseInt(document.getElementById('buyQuantity').value) || 1);
+    const total = qty * item.price;
+    document.getElementById('buySummary').innerHTML = `
+        <div class="summary-row"><span>상품:</span><span>${item.name}</span></div>
+        <div class="summary-row"><span>단가:</span><span>DM ${item.price.toLocaleString()}</span></div>
+        <div class="summary-row"><span>총 금액:</span><span>DM ${total.toLocaleString()}</span></div>
+    `;
+}
+
+async function confirmBuy() {
+    const item = items[pendingBuyItemId];
+    if (!item || !currentUser) return;
+
+    const qty = Math.max(1, parseInt(document.getElementById('buyQuantity').value) || 1);
+    const total = qty * item.price;
+
+    if (total > userCash) { showToast('현금이 부족합니다!', 'error'); return; }
+
+    try {
+        const snapshot = await database.ref('users/' + currentUser).once('value');
+        const userData = snapshot.val() || {};
+        const currentInventory = userData.inventory || {};
+        const existing = currentInventory[item.id];
+
+        const country = countries[item.countryId] || {};
+        const theme = themes[item.themeId] || {};
+
+        currentInventory[item.id] = {
+            name: item.name,
+            price: item.price,
+            countryName: country.name || '',
+            themeName: theme.name || '',
+            quantity: (existing ? existing.quantity : 0) + qty
+        };
+
+        const newCash = (userData.cash !== undefined ? userData.cash : 10000000) - total;
+
+        await database.ref('users/' + currentUser).update({
+            cash: newCash,
+            inventory: currentInventory,
+            lastUpdate: new Date().toISOString()
+        });
+
+        closeModal('buyModal');
+        showToast(`${item.name} ${qty}개 구매 완료!`, 'success');
+    } catch (error) {
+        console.error('구매 실패:', error);
+        showToast('구매 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+// ============================================
+// 내 보관함 / 선물하기
+// ============================================
+function renderInventory() {
+    const container = document.getElementById('inventoryContainer');
+    const itemIds = Object.keys(inventory);
+
+    if (itemIds.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:20px;">보유 물품이 없습니다</div>';
+        return;
+    }
+
+    container.innerHTML = itemIds.map(itemId => {
+        const holding = inventory[itemId];
+        return `
+            <div class="inventory-item">
+                <div class="inventory-header">
+                    <span class="inventory-name">${holding.name}</span>
+                    <span class="inventory-qty">${holding.quantity}개</span>
+                </div>
+                <div class="inventory-meta">${holding.countryName} · ${holding.themeName} · 개당 DM ${holding.price.toLocaleString()}</div>
+                <button class="gift-btn" onclick="openGiftModal('${itemId}')">🎁 선물하기</button>
+            </div>
+        `;
+    }).join('');
+}
+
+function openGiftModal(itemId) {
+    const holding = inventory[itemId];
+    if (!holding) return;
+
+    pendingGiftItemId = itemId;
+    document.getElementById('giftSummary').innerHTML = `
+        <div class="summary-row"><span>상품:</span><span>${holding.name}</span></div>
+        <div class="summary-row"><span>보유 수량:</span><span>${holding.quantity}개</span></div>
+    `;
+    document.getElementById('giftRecipient').value = '';
+    document.getElementById('giftQuantity').value = 1;
+    document.getElementById('giftModal').classList.add('active');
+}
+
+async function confirmGift() {
+    const itemId = pendingGiftItemId;
+    const holding = inventory[itemId];
+    if (!holding) return;
+
+    const recipientId = document.getElementById('giftRecipient').value.trim();
+    const qty = Math.max(1, parseInt(document.getElementById('giftQuantity').value) || 1);
+
+    if (!recipientId) { showToast('받는 사람 ID를 입력하세요!', 'error'); return; }
+    if (recipientId === currentUser) { showToast('자기 자신에게는 선물할 수 없습니다!', 'error'); return; }
+    if (qty > holding.quantity) { showToast('보유 수량이 부족합니다!', 'error'); return; }
+
+    try {
+        const recipientSnapshot = await database.ref('users/' + recipientId).once('value');
+        if (!recipientSnapshot.exists()) { showToast('존재하지 않는 사용자입니다!', 'error'); return; }
+        const recipientData = recipientSnapshot.val();
+
+        // 보내는 사람 보관함 갱신
+        const senderSnapshot = await database.ref('users/' + currentUser).once('value');
+        const senderData = senderSnapshot.val() || {};
+        const senderInventory = senderData.inventory || {};
+
+        if (!senderInventory[itemId] || senderInventory[itemId].quantity < qty) {
+            showToast('보유 수량이 부족합니다!', 'error');
+            return;
+        }
+
+        senderInventory[itemId].quantity -= qty;
+        if (senderInventory[itemId].quantity <= 0) delete senderInventory[itemId];
+
+        // 받는 사람 보관함 갱신
+        const recipientInventory = recipientData.inventory || {};
+        const existing = recipientInventory[itemId];
+        recipientInventory[itemId] = {
+            name: holding.name,
+            price: holding.price,
+            countryName: holding.countryName,
+            themeName: holding.themeName,
+            quantity: (existing ? existing.quantity : 0) + qty
+        };
+
+        await database.ref('users/' + currentUser).update({ inventory: senderInventory });
+        await database.ref('users/' + recipientId).update({ inventory: recipientInventory });
+
+        closeModal('giftModal');
+        showToast(`${recipientId}님께 ${holding.name} ${qty}개 선물 완료!`, 'success');
+    } catch (error) {
+        console.error('선물 실패:', error);
+        showToast('선물 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+function closeModal(id) {
+    document.getElementById(id).classList.remove('active');
+}
+
+function updateBalance() {
+    document.getElementById('cashBalance').textContent = `DM ${userCash.toLocaleString()}`;
+}
+
+function showToast(message, type = 'success') {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.style.borderColor = type === 'success' ? 'var(--accent-green)' : 'var(--accent-red)';
+    toast.style.boxShadow = type === 'success' ? '0 10px 40px var(--glow-green)' : '0 10px 40px var(--glow-red)';
+    toast.classList.add('active');
+    setTimeout(() => toast.classList.remove('active'), 3000);
+}
+
+// ============================================
+// 관리자: 패널 토글 / 탭
+// ============================================
+function toggleAdmin() {
+    const panel = document.getElementById('adminPanel');
+    if (panel.style.display === 'none') {
+        const inputPassword = prompt('관리자 비밀번호를 입력하세요:');
+        if (inputPassword === null) return;
+        if (inputPassword === ADMIN_PASSWORD) {
+            panel.style.display = 'block';
+            renderAdminCountryList();
+            populateAdminCountrySelects();
+            renderAdminUserList();
+            showToast('관리자 모드 활성화!', 'success');
+        } else {
+            showToast('비밀번호가 올바르지 않습니다!', 'error');
+        }
+    } else {
+        panel.style.display = 'none';
+    }
+}
+
+function switchAdminTab(tab) {
+    document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
+    document.querySelector(`.admin-tab:nth-child(${['country','theme','item','user'].indexOf(tab) + 1})`).classList.add('active');
+    document.getElementById(`adminSection-${tab}`).classList.add('active');
+
+    if (tab === 'theme') renderAdminThemeList();
+    if (tab === 'item') { onItemCountryChange(); }
+    if (tab === 'user') renderAdminUserList();
+}
+
+// ============================================
+// 관리자: 국가 관리
+// ============================================
+async function addCountry() {
+    const name = document.getElementById('newCountryName').value.trim();
+    const flag = document.getElementById('newCountryFlag').value.trim();
+
+    if (!name) { showToast('국가명을 입력하세요!', 'error'); return; }
+    if (!database) { showToast('Firebase 연결이 필요합니다!', 'error'); return; }
+
+    try {
+        const newRef = database.ref('shop_countries').push();
+        await newRef.set({ id: newRef.key, name: name, flag: flag || '🏳️' });
+        showToast(`${name} 추가 완료!`, 'success');
+        document.getElementById('newCountryName').value = '';
+        document.getElementById('newCountryFlag').value = '';
+        renderAdminCountryList();
+    } catch (error) {
+        console.error('국가 추가 실패:', error);
+        showToast('국가 추가 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+function renderAdminCountryList() {
+    const container = document.getElementById('adminCountryList');
+    const countryIds = Object.keys(countries);
+
+    if (countryIds.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:12px;">등록된 국가가 없습니다</div>';
+        return;
+    }
+
+    container.innerHTML = countryIds.map(id => {
+        const c = countries[id];
+        return `
+            <div class="admin-list-item">
+                <div>${c.flag || '🏳️'} <strong>${c.name}</strong></div>
+                <button class="delete-btn" onclick="deleteCountry('${id}')">삭제</button>
+            </div>
+        `;
+    }).join('');
+}
+
+async function deleteCountry(countryId) {
+    const c = countries[countryId];
+    if (!c) return;
+    if (!confirm(`정말로 ${c.name}을(를) 삭제하시겠습니까?\n\n이 국가의 모든 테마와 상품이 함께 삭제됩니다.`)) return;
+
+    try {
+        const themeIdsToDelete = Object.values(themes).filter(t => t.countryId === countryId).map(t => t.id);
+        const itemIdsToDelete = Object.values(items).filter(i => i.countryId === countryId).map(i => i.id);
+
+        const updates = {};
+        updates[`shop_countries/${countryId}`] = null;
+        themeIdsToDelete.forEach(id => { updates[`shop_themes/${id}`] = null; });
+        itemIdsToDelete.forEach(id => { updates[`shop_items/${id}`] = null; });
+
+        await database.ref().update(updates);
+
+        if (selectedCountryId === countryId) selectedCountryId = null;
+        showToast(`${c.name} 삭제 완료!`, 'success');
+        renderAdminCountryList();
+    } catch (error) {
+        console.error('국가 삭제 실패:', error);
+        showToast('국가 삭제 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+// ============================================
+// 관리자: 테마 관리
+// ============================================
+function populateAdminCountrySelects() {
+    const options = Object.keys(countries).map(id =>
+        `<option value="${id}">${countries[id].flag || '🏳️'} ${countries[id].name}</option>`
+    ).join('');
+
+    const themeSelect = document.getElementById('themeCountrySelect');
+    const itemSelect = document.getElementById('itemCountrySelect');
+    if (themeSelect) {
+        const prev = themeSelect.value;
+        themeSelect.innerHTML = options || '<option value="">국가를 먼저 추가하세요</option>';
+        if (prev && countries[prev]) themeSelect.value = prev;
+    }
+    if (itemSelect) {
+        const prev = itemSelect.value;
+        itemSelect.innerHTML = options || '<option value="">국가를 먼저 추가하세요</option>';
+        if (prev && countries[prev]) itemSelect.value = prev;
+        onItemCountryChange();
+    }
+}
+
+async function addTheme() {
+    const countryId = document.getElementById('themeCountrySelect').value;
+    const name = document.getElementById('newThemeName').value.trim();
+
+    if (!countryId) { showToast('국가를 먼저 추가하세요!', 'error'); return; }
+    if (!name) { showToast('테마명을 입력하세요!', 'error'); return; }
+
+    try {
+        const newRef = database.ref('shop_themes').push();
+        await newRef.set({ id: newRef.key, countryId: countryId, name: name });
+        showToast(`${name} 테마 추가 완료!`, 'success');
+        document.getElementById('newThemeName').value = '';
+        renderAdminThemeList();
+    } catch (error) {
+        console.error('테마 추가 실패:', error);
+        showToast('테마 추가 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+function renderAdminThemeList() {
+    const container = document.getElementById('adminThemeList');
+    const countryId = document.getElementById('themeCountrySelect').value;
+    const countryThemes = Object.values(themes).filter(t => t.countryId === countryId);
+
+    if (countryThemes.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:12px;">등록된 테마가 없습니다</div>';
+        return;
+    }
+
+    container.innerHTML = countryThemes.map(t => `
+        <div class="admin-list-item">
+            <div><strong>${t.name}</strong></div>
+            <button class="delete-btn" onclick="deleteTheme('${t.id}')">삭제</button>
+        </div>
+    `).join('');
+}
+
+async function deleteTheme(themeId) {
+    const t = themes[themeId];
+    if (!t) return;
+    if (!confirm(`정말로 "${t.name}" 테마를 삭제하시겠습니까?\n\n이 테마의 모든 상품이 함께 삭제됩니다.`)) return;
+
+    try {
+        const itemIdsToDelete = Object.values(items).filter(i => i.themeId === themeId).map(i => i.id);
+        const updates = {};
+        updates[`shop_themes/${themeId}`] = null;
+        itemIdsToDelete.forEach(id => { updates[`shop_items/${id}`] = null; });
+
+        await database.ref().update(updates);
+        showToast(`"${t.name}" 테마 삭제 완료!`, 'success');
+        renderAdminThemeList();
+    } catch (error) {
+        console.error('테마 삭제 실패:', error);
+        showToast('테마 삭제 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+// ============================================
+// 관리자: 상품 관리
+// ============================================
+function onItemCountryChange() {
+    const countryId = document.getElementById('itemCountrySelect').value;
+    const themeSelect = document.getElementById('itemThemeSelect');
+    const countryThemes = Object.values(themes).filter(t => t.countryId === countryId);
+
+    themeSelect.innerHTML = countryThemes.length > 0
+        ? countryThemes.map(t => `<option value="${t.id}">${t.name}</option>`).join('')
+        : '<option value="">테마를 먼저 추가하세요</option>';
+
+    renderAdminItemList();
+}
+
+async function addItem() {
+    const countryId = document.getElementById('itemCountrySelect').value;
+    const themeId = document.getElementById('itemThemeSelect').value;
+    const name = document.getElementById('newItemName').value.trim();
+    const price = parseInt(document.getElementById('newItemPrice').value) || 0;
+    const description = document.getElementById('newItemDesc').value.trim();
+    const image = document.getElementById('newItemImage').value.trim();
+
+    if (!countryId || !themeId) { showToast('국가와 테마를 먼저 선택하세요!', 'error'); return; }
+    if (!name) { showToast('상품명을 입력하세요!', 'error'); return; }
+    if (price <= 0) { showToast('올바른 가격을 입력하세요!', 'error'); return; }
+
+    try {
+        const newRef = database.ref('shop_items').push();
+        await newRef.set({
+            id: newRef.key, countryId, themeId, name, price,
+            description: description || '', image: image || ''
+        });
+        showToast(`${name} 상품 추가 완료!`, 'success');
+        document.getElementById('newItemName').value = '';
+        document.getElementById('newItemPrice').value = '50000';
+        document.getElementById('newItemDesc').value = '';
+        document.getElementById('newItemImage').value = '';
+        renderAdminItemList();
+    } catch (error) {
+        console.error('상품 추가 실패:', error);
+        showToast('상품 추가 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+function renderAdminItemList() {
+    const container = document.getElementById('adminItemList');
+    const themeId = document.getElementById('itemThemeSelect').value;
+    const themeItems = Object.values(items).filter(i => i.themeId === themeId);
+
+    if (themeItems.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:12px;">등록된 상품이 없습니다</div>';
+        return;
+    }
+
+    container.innerHTML = themeItems.map(item => `
+        <div class="admin-list-item">
+            <div>
+                <div><strong>${item.name}</strong></div>
+                <div style="font-size:0.8rem;color:var(--text-secondary);">DM ${item.price.toLocaleString()}</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+                <button class="admin-btn" style="padding:6px 12px;font-size:0.75rem;background:var(--accent-blue);"
+                        onclick="setItemPrice('${item.id}', '${item.name}', ${item.price})">💰 가격설정</button>
+                <button class="delete-btn" onclick="deleteItem('${item.id}')">삭제</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function setItemPrice(itemId, name, currentPrice) {
+    const newPrice = prompt(`${name}의 새 가격을 입력하세요:`, currentPrice);
+    if (!newPrice) return;
+    const price = parseInt(newPrice);
+    if (isNaN(price) || price <= 0) { showToast('올바른 가격을 입력하세요!', 'error'); return; }
+
+    try {
+        await database.ref(`shop_items/${itemId}`).update({ price });
+        showToast(`${name} 가격 변경 완료!`, 'success');
+        renderAdminItemList();
+    } catch (error) {
+        console.error('가격 변경 실패:', error);
+        showToast('가격 변경 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+async function deleteItem(itemId) {
+    const item = items[itemId];
+    if (!item) return;
+    if (!confirm(`정말로 ${item.name}을(를) 삭제하시겠습니까?`)) return;
+
+    try {
+        await database.ref(`shop_items/${itemId}`).remove();
+        showToast(`${item.name} 삭제 완료!`, 'success');
+        renderAdminItemList();
+    } catch (error) {
+        console.error('상품 삭제 실패:', error);
+        showToast('상품 삭제 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+// ============================================
+// 관리자: 사용자 관리
+// ============================================
+async function adminCreateUser() {
+    const userId = document.getElementById('newUserId').value.trim();
+    const password = document.getElementById('newUserPassword').value;
+
+    if (!userId || userId.length < 4) { showToast('ID는 4자 이상이어야 합니다!', 'error'); return; }
+    if (!password || password.length < 4) { showToast('비밀번호는 4자 이상이어야 합니다!', 'error'); return; }
+
+    try {
+        const snapshot = await database.ref('users/' + userId).once('value');
+        if (snapshot.exists()) { showToast('이미 존재하는 ID입니다!', 'error'); return; }
+
+        await database.ref('users/' + userId).set({
+            password: password,
+            cash: 10000000,
+            portfolio: {},
+            inventory: {},
+            createdAt: new Date().toISOString()
+        });
+
+        showToast(`${userId} 사용자 생성 완료!`, 'success');
+        document.getElementById('newUserId').value = '';
+        document.getElementById('newUserPassword').value = '';
+        renderAdminUserList();
+    } catch (error) {
+        console.error('사용자 생성 실패:', error);
+        showToast('사용자 생성 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+async function renderAdminUserList() {
+    const container = document.getElementById('adminUserList');
+    if (!database) { container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:12px;">Firebase 연결 필요</div>'; return; }
+
+    try {
+        const snapshot = await database.ref('users').once('value');
+        const usersData = snapshot.val();
+
+        if (!usersData || Object.keys(usersData).length === 0) {
+            container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:12px;">등록된 사용자가 없습니다</div>';
+            return;
+        }
+
+        container.innerHTML = Object.keys(usersData).map(userId => {
+            const userData = usersData[userId];
+            const cash = userData.cash !== undefined ? userData.cash : 10000000;
+            const itemCount = userData.inventory ? Object.keys(userData.inventory).length : 0;
+
+            return `
+                <div class="admin-list-item">
+                    <div>
+                        <div><strong>${userId}</strong></div>
+                        <div style="font-size:0.8rem;color:var(--text-secondary);">현금: DM ${cash.toLocaleString()} · 보관함 ${itemCount}종</div>
+                    </div>
+                    <div style="display:flex;gap:8px;">
+                        <button class="admin-btn" style="padding:6px 12px;font-size:0.75rem;background:var(--accent-gold);color:var(--bg-primary);"
+                                onclick="openAdminInventoryModal('${userId}')">📦 보유물품 수정</button>
+                        <button class="delete-btn" onclick="adminDeleteUser('${userId}')">🗑️ 삭제</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('사용자 목록 로드 실패:', error);
+        container.innerHTML = '<div style="text-align:center;color:var(--accent-red);padding:12px;">로드 실패</div>';
+    }
+}
+
+// ============================================
+// 관리자: 사용자 보유물품 수정
+// ============================================
+let adminInventoryTargetUser = null;
+
+async function openAdminInventoryModal(userId) {
+    adminInventoryTargetUser = userId;
+    document.getElementById('adminInventoryUserLabel').textContent = userId;
+
+    const itemOptions = Object.values(items).map(item => {
+        const country = countries[item.countryId] || {};
+        const theme = themes[item.themeId] || {};
+        return `<option value="${item.id}">${country.name || '?'} · ${theme.name || '?'} · ${item.name} (DM ${item.price.toLocaleString()})</option>`;
+    }).join('');
+    document.getElementById('adminInventoryItemSelect').innerHTML = itemOptions || '<option value="">등록된 상품이 없습니다</option>';
+    document.getElementById('adminInventoryAddQty').value = 1;
+
+    await renderAdminInventoryCurrentList();
+    document.getElementById('adminInventoryModal').classList.add('active');
+}
+
+async function renderAdminInventoryCurrentList() {
+    const container = document.getElementById('adminInventoryCurrentList');
+    if (!adminInventoryTargetUser) return;
+
+    const snapshot = await database.ref('users/' + adminInventoryTargetUser + '/inventory').once('value');
+    const userInventory = snapshot.val() || {};
+    const itemIds = Object.keys(userInventory);
+
+    if (itemIds.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:12px;">보유 물품이 없습니다</div>';
+        return;
+    }
+
+    container.innerHTML = itemIds.map(itemId => {
+        const holding = userInventory[itemId];
+        return `
+            <div class="admin-list-item">
+                <div>
+                    <div><strong>${holding.name}</strong></div>
+                    <div style="font-size:0.75rem;color:var(--text-secondary);">${holding.countryName} · ${holding.themeName} · 개당 DM ${holding.price.toLocaleString()}</div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input type="number" class="item-qty" style="width:70px;" min="0" value="${holding.quantity}"
+                           id="adminInvQty-${itemId}">
+                    <button class="admin-btn" style="padding:6px 12px;font-size:0.75rem;background:var(--accent-blue);"
+                            onclick="adminUpdateInventoryQty('${itemId}')">저장</button>
+                    <button class="delete-btn" onclick="adminRemoveInventoryItem('${itemId}')">삭제</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function adminUpdateInventoryQty(itemId) {
+    if (!adminInventoryTargetUser) return;
+    const newQty = parseInt(document.getElementById(`adminInvQty-${itemId}`).value);
+
+    if (isNaN(newQty) || newQty < 0) { showToast('올바른 수량을 입력하세요!', 'error'); return; }
+
+    try {
+        if (newQty === 0) {
+            await database.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}`).remove();
+        } else {
+            await database.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}/quantity`).set(newQty);
+        }
+        showToast('수량이 수정되었습니다!', 'success');
+        renderAdminInventoryCurrentList();
+        renderAdminUserList();
+    } catch (error) {
+        console.error('수량 수정 실패:', error);
+        showToast('수량 수정 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+async function adminRemoveInventoryItem(itemId) {
+    if (!adminInventoryTargetUser) return;
+    if (!confirm('이 물품을 사용자의 보관함에서 완전히 제거하시겠습니까?')) return;
+
+    try {
+        await database.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}`).remove();
+        showToast('물품이 제거되었습니다!', 'success');
+        renderAdminInventoryCurrentList();
+        renderAdminUserList();
+    } catch (error) {
+        console.error('물품 제거 실패:', error);
+        showToast('물품 제거 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+async function adminAddInventoryItem() {
+    if (!adminInventoryTargetUser) return;
+    const itemId = document.getElementById('adminInventoryItemSelect').value;
+    const qty = parseInt(document.getElementById('adminInventoryAddQty').value);
+
+    if (!itemId) { showToast('상품을 선택하세요!', 'error'); return; }
+    if (isNaN(qty) || qty <= 0) { showToast('올바른 수량을 입력하세요!', 'error'); return; }
+
+    const item = items[itemId];
+    if (!item) { showToast('상품 정보를 찾을 수 없습니다!', 'error'); return; }
+
+    try {
+        const country = countries[item.countryId] || {};
+        const theme = themes[item.themeId] || {};
+
+        const snapshot = await database.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}`).once('value');
+        const existing = snapshot.val();
+
+        await database.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}`).set({
+            name: item.name,
+            price: item.price,
+            countryName: country.name || '',
+            themeName: theme.name || '',
+            quantity: (existing ? existing.quantity : 0) + qty
+        });
+
+        showToast(`${item.name} ${qty}개 지급 완료!`, 'success');
+        document.getElementById('adminInventoryAddQty').value = 1;
+        renderAdminInventoryCurrentList();
+        renderAdminUserList();
+    } catch (error) {
+        console.error('물품 지급 실패:', error);
+        showToast('물품 지급 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+async function adminDeleteUser(userId) {
+    if (userId === currentUser) { showToast('자기 자신은 삭제할 수 없습니다!', 'error'); return; }
+    if (!confirm(`정말로 ${userId}님의 계정을 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다!`)) return;
+
+    try {
+        await database.ref('users/' + userId).remove();
+        showToast(`${userId}님의 계정이 삭제되었습니다.`, 'success');
+        renderAdminUserList();
+    } catch (error) {
+        console.error('계정 삭제 실패:', error);
+        showToast('계정 삭제 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+// 초기화 실행
+init();
+    </script>
+</body>
+</html>
