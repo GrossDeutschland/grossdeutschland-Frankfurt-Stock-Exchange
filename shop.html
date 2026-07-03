@@ -161,6 +161,13 @@ header {
 }
 .input-field:focus { outline: none; border-color: var(--accent-blue); box-shadow: 0 0 15px var(--glow-blue); }
 
+textarea.input-field { resize: vertical; min-height: 70px; font-family: 'JetBrains Mono', monospace; }
+
+.edit-preview-image {
+    width: 100%; height: 140px; border-radius: 8px; object-fit: cover; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); margin-top: 8px; display: none;
+}
+
 .execute-btn {
     width: 100%; padding: 16px; border: none; border-radius: 8px; font-family: 'Orbitron', sans-serif;
     font-size: 1rem; font-weight: 700; cursor: pointer; transition: all 0.3s; text-transform: uppercase;
@@ -168,6 +175,7 @@ header {
 }
 .execute-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px var(--glow-green); }
 .execute-btn.purple { background: var(--accent-purple); color: white; box-shadow: 0 5px 20px rgba(168,85,247,0.3); }
+.execute-btn.blue { background: var(--accent-blue); color: var(--bg-primary); box-shadow: 0 5px 20px var(--glow-blue); }
 
 .modal {
     display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -213,6 +221,11 @@ header {
     background: var(--bg-tertiary); border-radius: 6px; margin-bottom: 10px; border: 1px solid var(--border-color);
     flex-wrap: wrap; gap: 8px;
 }
+.admin-item-thumb {
+    width: 44px; height: 44px; border-radius: 6px; object-fit: cover; background: var(--bg-secondary);
+    border: 1px solid var(--border-color); margin-right: 10px; flex-shrink: 0;
+}
+.admin-list-item-main { display: flex; align-items: center; }
 .delete-btn {
     padding: 6px 12px; background: var(--accent-red); border: none; border-radius: 4px; color: white;
     cursor: pointer; font-size: 0.8rem; transition: all 0.3s;
@@ -421,6 +434,37 @@ header {
         </div>
     </div>
 
+    <!-- Edit Item Modal (이름/가격/설명/이미지 수정) -->
+    <div class="modal" id="editItemModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('editItemModal')">×</button>
+            <div class="modal-header">✏️ 상품 정보 수정</div>
+
+            <div class="input-group">
+                <label class="input-label">상품명</label>
+                <input type="text" class="input-field" id="editItemName" placeholder="상품명">
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">가격 (DM)</label>
+                <input type="number" class="input-field" id="editItemPrice" placeholder="50000">
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">설명</label>
+                <textarea class="input-field" id="editItemDesc" placeholder="상품 설명"></textarea>
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">이미지 URL</label>
+                <input type="text" class="input-field" id="editItemImage" placeholder="https://..." oninput="updateEditImagePreview()">
+                <img id="editImagePreview" class="edit-preview-image" alt="미리보기" onerror="this.style.display='none'" onload="this.style.display='block'">
+            </div>
+
+            <button class="execute-btn blue" onclick="confirmEditItem()">수정 완료</button>
+        </div>
+    </div>
+
     <!-- Admin Inventory Edit Modal -->
     <div class="modal" id="adminInventoryModal">
         <div class="modal-content" style="max-width: 560px;">
@@ -553,6 +597,7 @@ let items = {};              // { itemId: {id, themeId, countryId, name, price, 
 let selectedCountryId = null;
 let pendingBuyItemId = null;
 let pendingGiftItemId = null;
+let pendingEditItemId = null;
 
 // ============================================
 // 초기화
@@ -593,6 +638,11 @@ function subscribeToCatalog() {
     database.ref('shop_items').on('value', (snapshot) => {
         items = snapshot.val() || {};
         renderStore();
+        // 관리자 패널이 열려있고 상품관리 탭이 보이는 중이면 목록도 갱신
+        const adminPanel = document.getElementById('adminPanel');
+        if (adminPanel && adminPanel.style.display !== 'none') {
+            renderAdminItemList();
+        }
     });
 }
 
@@ -1241,34 +1291,83 @@ function renderAdminItemList() {
         return;
     }
 
-    container.innerHTML = themeItems.map(item => `
+    container.innerHTML = themeItems.map(item => {
+        const thumb = item.image
+            ? `<img src="${item.image}" class="admin-item-thumb" alt="${item.name}" onerror="this.style.visibility='hidden'">`
+            : `<div class="admin-item-thumb" style="display:flex;align-items:center;justify-content:center;font-size:0.7rem;color:var(--text-secondary);">📦</div>`;
+        return `
         <div class="admin-list-item">
-            <div>
-                <div><strong>${item.name}</strong></div>
-                <div style="font-size:0.8rem;color:var(--text-secondary);">DM ${item.price.toLocaleString()}</div>
+            <div class="admin-list-item-main">
+                ${thumb}
+                <div>
+                    <div><strong>${item.name}</strong></div>
+                    <div style="font-size:0.8rem;color:var(--text-secondary);">DM ${item.price.toLocaleString()}${item.description ? ' · ' + item.description : ''}</div>
+                </div>
             </div>
             <div style="display:flex;gap:8px;">
                 <button class="admin-btn" style="padding:6px 12px;font-size:0.75rem;background:var(--accent-blue);"
-                        onclick="setItemPrice('${item.id}', '${item.name}', ${item.price})">💰 가격설정</button>
+                        onclick="openEditItemModal('${item.id}')">✏️ 수정</button>
                 <button class="delete-btn" onclick="deleteItem('${item.id}')">삭제</button>
             </div>
         </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
-async function setItemPrice(itemId, name, currentPrice) {
-    const newPrice = prompt(`${name}의 새 가격을 입력하세요:`, currentPrice);
-    if (!newPrice) return;
-    const price = parseInt(newPrice);
+// --- 상품 정보(이름/가격/설명/이미지) 수정 모달 ---
+function openEditItemModal(itemId) {
+    const item = items[itemId];
+    if (!item) { showToast('상품 정보를 찾을 수 없습니다!', 'error'); return; }
+
+    pendingEditItemId = itemId;
+    document.getElementById('editItemName').value = item.name || '';
+    document.getElementById('editItemPrice').value = item.price || 0;
+    document.getElementById('editItemDesc').value = item.description || '';
+    document.getElementById('editItemImage').value = item.image || '';
+
+    updateEditImagePreview();
+    document.getElementById('editItemModal').classList.add('active');
+}
+
+function updateEditImagePreview() {
+    const url = document.getElementById('editItemImage').value.trim();
+    const preview = document.getElementById('editImagePreview');
+    if (url) {
+        preview.src = url;
+        preview.style.display = 'block';
+    } else {
+        preview.style.display = 'none';
+        preview.removeAttribute('src');
+    }
+}
+
+async function confirmEditItem() {
+    const itemId = pendingEditItemId;
+    const item = items[itemId];
+    if (!item) return;
+
+    const name = document.getElementById('editItemName').value.trim();
+    const price = parseInt(document.getElementById('editItemPrice').value);
+    const description = document.getElementById('editItemDesc').value.trim();
+    const image = document.getElementById('editItemImage').value.trim();
+
+    if (!name) { showToast('상품명을 입력하세요!', 'error'); return; }
     if (isNaN(price) || price <= 0) { showToast('올바른 가격을 입력하세요!', 'error'); return; }
 
     try {
-        await database.ref(`shop_items/${itemId}`).update({ price });
-        showToast(`${name} 가격 변경 완료!`, 'success');
+        await database.ref(`shop_items/${itemId}`).update({
+            name: name,
+            price: price,
+            description: description || '',
+            image: image || ''
+        });
+
+        showToast(`${name} 상품 정보가 수정되었습니다!`, 'success');
+        closeModal('editItemModal');
         renderAdminItemList();
     } catch (error) {
-        console.error('가격 변경 실패:', error);
-        showToast('가격 변경 중 오류가 발생했습니다!', 'error');
+        console.error('상품 수정 실패:', error);
+        showToast('상품 수정 중 오류가 발생했습니다!', 'error');
     }
 }
 
