@@ -670,6 +670,22 @@ async function loadUserData() {
 }
 
 // ============================================
+// 🔐 비밀번호 해시 처리 (F12/네트워크 탭에 평문 노출 방지)
+// ------------------------------------------------
+// SHA-256으로 비밀번호를 되돌릴 수 없게 변환한 뒤 DB에 저장/비교합니다.
+// 기존 계정(평문 저장)은 다음 로그인 성공 시 자동으로 해시로 업그레이드됩니다.
+// index.html과 동일한 로직이며, 같은 users 노드를 공유합니다.
+// ============================================
+async function hashPassword(password) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hashBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+}
+
+// ============================================
 // 로그인 / 회원가입 / 로그아웃 (증권거래소와 계정 공유)
 // ============================================
 async function loginUser() {
@@ -684,7 +700,16 @@ async function loginUser() {
         const userData = snapshot.val();
 
         if (!userData) { showToast('존재하지 않는 사용자입니다!', 'error'); return; }
-        if (userData.password !== password) { showToast('비밀번호가 올바르지 않습니다!', 'error'); return; }
+
+        const inputHash = await hashPassword(password);
+
+        if (userData.password === password) {
+            // 아직 평문으로 저장된 구버전 계정 → 로그인 성공했으니 해시로 업그레이드
+            await database.ref('users/' + userId).update({ password: inputHash });
+        } else if (userData.password !== inputHash) {
+            showToast('비밀번호가 올바르지 않습니다!', 'error');
+            return;
+        }
 
         currentUser = userId;
         localStorage.setItem('fwb_currentUser', userId);
@@ -715,8 +740,10 @@ async function signupUser() {
         const snapshot = await database.ref('users/' + userId).once('value');
         if (snapshot.exists()) { showToast('이미 존재하는 ID입니다!', 'error'); return; }
 
+        const hashedPassword = await hashPassword(password);
+
         await database.ref('users/' + userId).set({
-            password: password,
+            password: hashedPassword,
             cash: 10000000,
             portfolio: {},
             inventory: {},
@@ -1400,8 +1427,10 @@ async function adminCreateUser() {
         const snapshot = await database.ref('users/' + userId).once('value');
         if (snapshot.exists()) { showToast('이미 존재하는 ID입니다!', 'error'); return; }
 
+        const hashedPassword = await hashPassword(password);
+
         await database.ref('users/' + userId).set({
-            password: password,
+            password: hashedPassword,
             cash: 10000000,
             portfolio: {},
             inventory: {},
