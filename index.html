@@ -1272,7 +1272,7 @@ function subscribeToLeaderboard() {
         
         for (const userId in usersData) {
             const userData = usersData[userId];
-            let totalAssets = userData.cash ?? 10000000;
+            let totalAssets = userData.cash || 10000000;
             
             if (userData.portfolio) {
                 for (const symbol in userData.portfolio) {
@@ -1393,7 +1393,7 @@ async function loadUserData() {
             userCash = 10000000;
             portfolio = {};
         } else {
-            userCash = userData.cash ?? 10000000;
+            userCash = userData.cash || 10000000;
             portfolio = userData.portfolio || {};
         }
         
@@ -1422,6 +1422,21 @@ async function saveUserData() {
 }
 
 // ============================================
+// 🔐 비밀번호 해시 처리 (F12/네트워크 탭에 평문 노출 방지)
+// ------------------------------------------------
+// SHA-256으로 비밀번호를 되돌릴 수 없게 변환한 뒤 DB에 저장/비교합니다.
+// 기존 계정(평문 저장)은 다음 로그인 성공 시 자동으로 해시로 업그레이드됩니다.
+// ============================================
+async function hashPassword(password) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hashBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+}
+
+// ============================================
 // 로그인/회원가입 함수
 // ============================================
 async function loginUser() {
@@ -1447,7 +1462,12 @@ async function loginUser() {
             return;
         }
 
-        if (userData.password !== password) {
+        const inputHash = await hashPassword(password);
+
+        if (userData.password === password) {
+            // 아직 평문으로 저장된 구버전 계정 → 로그인 성공했으니 해시로 업그레이드
+            await database.ref('users/' + userId).update({ password: inputHash });
+        } else if (userData.password !== inputHash) {
             showToast('비밀번호가 올바르지 않습니다!', 'error');
             return;
         }
@@ -1505,8 +1525,10 @@ async function signupUser() {
             return;
         }
 
+        const hashedPassword = await hashPassword(password);
+
         await database.ref('users/' + userId).set({
-            password: password,
+            password: hashedPassword,
             cash: 10000000,
             portfolio: {},
             createdAt: new Date().toISOString()
@@ -1908,7 +1930,7 @@ function renderLeaderboard() {
     const userRank = leaderboard.findIndex(l => l.isCurrentUser) + 1;
     document.getElementById('userRank').textContent = userRank || '-';
 
-    container.innerHTML = leaderboard.slice(0, 20).map((user, index) => {
+    container.innerHTML = leaderboard.slice(0, 10).map((user, index) => {
         const rankClass = index === 0 ? 'first' : index === 1 ? 'second' : index === 2 ? 'third' : 'other';
         return `
             <div class="leaderboard-item" style="${user.isCurrentUser ? 'border-color: var(--accent-blue);' : ''}">
@@ -2051,7 +2073,7 @@ async function executeTransfer() {
         await saveUserData();
 
         await database.ref('users/' + recipientId).update({
-            cash: (recipientData.cash ?? 10000000) + amount,
+            cash: (recipientData.cash || 10000000) + amount,
             lastUpdate: new Date().toISOString()
         });
 
@@ -2206,7 +2228,7 @@ async function renderAdminUserList() {
 
         const userList = Object.keys(usersData).map(userId => {
             const userData = usersData[userId];
-            const cash = userData.cash ?? 10000000;
+            const cash = userData.cash || 10000000;
             
             return `
                 <div class="stock-admin-item">
@@ -2250,7 +2272,7 @@ async function adminAddMoney(userId) {
             return;
         }
 
-        const newCash = (userData.cash ?? 10000000) + amount;
+        const newCash = (userData.cash || 10000000) + amount;
         
         await database.ref('users/' + userId).update({
             cash: newCash,
@@ -2282,7 +2304,7 @@ async function adminWithdrawMoney(userId) {
             return;
         }
 
-        const currentCash = userData.cash ?? 10000000;
+        const currentCash = userData.cash || 10000000;
         
         if (amount > currentCash) {
             if (!confirm(`${userId}님의 현금(DM ${currentCash.toLocaleString()})보다 큰 금액입니다.\n\n강제로 출금하시겠습니까? (잔액이 음수가 될 수 있습니다)`)) {
@@ -2393,7 +2415,7 @@ async function deleteStock(symbol) {
                 const userData = usersData[userId];
                 if (userData.portfolio && userData.portfolio[symbol]) {
                     const refundAmount = userData.portfolio[symbol].quantity * stock.price;
-                    const newCash = (userData.cash ?? 10000000) + refundAmount;
+                    const newCash = (userData.cash || 10000000) + refundAmount;
                     
                     delete userData.portfolio[symbol];
                     
