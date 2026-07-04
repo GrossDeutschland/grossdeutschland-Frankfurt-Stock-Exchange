@@ -1930,7 +1930,7 @@ function renderLeaderboard() {
     const userRank = leaderboard.findIndex(l => l.isCurrentUser) + 1;
     document.getElementById('userRank').textContent = userRank || '-';
 
-    container.innerHTML = leaderboard.slice(0, 10).map((user, index) => {
+    container.innerHTML = leaderboard.slice(0, 20).map((user, index) => {
         const rankClass = index === 0 ? 'first' : index === 1 ? 'second' : index === 2 ? 'third' : 'other';
         return `
             <div class="leaderboard-item" style="${user.isCurrentUser ? 'border-color: var(--accent-blue);' : ''}">
