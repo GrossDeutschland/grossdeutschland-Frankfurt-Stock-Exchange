@@ -1135,8 +1135,9 @@ const firebaseConfig = {
 };
 
 let database;
-let auth;      // 일반 유저(플레이어) 로그인 전용
-let adminAuth; // 관리자 로그인 전용 (별도 세션 - 서로 로그아웃시키지 않음)
+let auth;         // 일반 유저(플레이어) 로그인 전용
+let adminAuth;    // 관리자 로그인 전용 (별도 세션 - 서로 로그아웃시키지 않음)
+let adminDatabase; // 관리자 로그인 세션으로 DB에 접근할 때 반드시 이걸 사용 (database를 쓰면 인증 상태가 안 맞음)
 try {
     firebase.initializeApp(firebaseConfig);
     database = firebase.database();
@@ -1144,8 +1145,10 @@ try {
 
     // 관리자 로그인은 완전히 별도의 Firebase 앱 인스턴스를 써서,
     // 관리자가 로그인/로그아웃해도 플레이어 세션에 영향이 없게 합니다.
+    // 이 앱 인스턴스의 database()를 써야 관리자 인증이 적용됩니다.
     const adminApp = firebase.initializeApp(firebaseConfig, 'adminApp');
     adminAuth = adminApp.auth();
+    adminDatabase = adminApp.database();
 
     console.log('✅ Firebase 연결 성공!');
 } catch (error) {
@@ -1176,7 +1179,7 @@ if (adminAuth) {
     adminAuth.onAuthStateChanged(async (user) => {
         if (user) {
             try {
-                const adminSnap = await database.ref('admins/' + user.uid).once('value');
+                const adminSnap = await adminDatabase.ref('admins/' + user.uid).once('value');
                 isAdminAuthenticated = adminSnap.val() === true;
                 currentAdminUid = user.uid;
             } catch (e) {
@@ -2253,7 +2256,7 @@ async function toggleAdmin() {
 
         try {
             const cred = await adminAuth.signInWithEmailAndPassword(ADMIN_EMAIL, inputPassword);
-            const adminSnap = await database.ref('admins/' + cred.user.uid).once('value');
+            const adminSnap = await adminDatabase.ref('admins/' + cred.user.uid).once('value');
 
             if (adminSnap.val() === true) {
                 isAdminAuthenticated = true;
@@ -2399,7 +2402,7 @@ async function adminAddMoney(uid, name) {
     }
 
     try {
-        const snapshot = await database.ref('users/' + uid).once('value');
+        const snapshot = await adminDatabase.ref('users/' + uid).once('value');
         const userData = snapshot.val();
 
         if (!userData) {
@@ -2409,7 +2412,7 @@ async function adminAddMoney(uid, name) {
 
         const newCash = (userData.cash ?? 10000000) + amount;
 
-        await database.ref('users/' + uid).update({
+        await adminDatabase.ref('users/' + uid).update({
             cash: newCash,
             lastUpdate: new Date().toISOString()
         });
@@ -2431,7 +2434,7 @@ async function adminWithdrawMoney(uid, name) {
     }
 
     try {
-        const snapshot = await database.ref('users/' + uid).once('value');
+        const snapshot = await adminDatabase.ref('users/' + uid).once('value');
         const userData = snapshot.val();
 
         if (!userData) {
@@ -2449,7 +2452,7 @@ async function adminWithdrawMoney(uid, name) {
 
         const newCash = currentCash - amount;
 
-        await database.ref('users/' + uid).update({
+        await adminDatabase.ref('users/' + uid).update({
             cash: newCash,
             lastUpdate: new Date().toISOString()
         });
@@ -2473,8 +2476,8 @@ async function adminDeleteUser(uid, name) {
     }
 
     try {
-        await database.ref('users/' + uid).remove();
-        await database.ref('usernames/' + name).remove();
+        await adminDatabase.ref('users/' + uid).remove();
+        await adminDatabase.ref('usernames/' + name).remove();
         showToast(`${name}님의 계정이 삭제되었습니다.`, 'success');
         renderAdminUserList();
     } catch (error) {
@@ -2499,13 +2502,13 @@ async function addNewStock() {
         return;
     }
 
-    if (!database) {
+    if (!adminDatabase) {
         showToast('Firebase 연결이 필요합니다!', 'error');
         return;
     }
 
     try {
-        await database.ref('stocks/' + symbol).set({
+        await adminDatabase.ref('stocks/' + symbol).set({
             symbol: symbol,
             name: name,
             price: price,
@@ -2537,13 +2540,13 @@ async function deleteStock(symbol) {
         return;
     }
 
-    if (!database) {
+    if (!adminDatabase) {
         showToast('Firebase 연결이 필요합니다!', 'error');
         return;
     }
 
     try {
-        const usersSnapshot = await database.ref('users').once('value');
+        const usersSnapshot = await adminDatabase.ref('users').once('value');
         const usersData = usersSnapshot.val();
         
         if (usersData) {
@@ -2555,7 +2558,7 @@ async function deleteStock(symbol) {
                     
                     delete userData.portfolio[symbol];
                     
-                    await database.ref('users/' + userId).update({
+                    await adminDatabase.ref('users/' + userId).update({
                         cash: newCash,
                         portfolio: userData.portfolio
                     });
@@ -2563,7 +2566,7 @@ async function deleteStock(symbol) {
             }
         }
         
-        await database.ref('stocks/' + symbol).remove();
+        await adminDatabase.ref('stocks/' + symbol).remove();
         
         showToast(`${stock.name} 삭제 완료!`, 'success');
         
@@ -2594,7 +2597,7 @@ async function setStockPrice(symbol, name, currentPrice) {
         return;
     }
 
-    if (!database) {
+    if (!adminDatabase) {
         showToast('Firebase 연결이 필요합니다!', 'error');
         return;
     }
@@ -2602,7 +2605,7 @@ async function setStockPrice(symbol, name, currentPrice) {
     try {
         const change = ((price - currentPrice) / currentPrice) * 100;
 
-        await database.ref(`stocks/${symbol}`).update({
+        await adminDatabase.ref(`stocks/${symbol}`).update({
             price: price,
             change: parseFloat(change.toFixed(2))
         });
