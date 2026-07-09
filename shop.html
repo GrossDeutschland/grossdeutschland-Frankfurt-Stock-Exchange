@@ -577,7 +577,7 @@ if (adminAuth) {
     adminAuth.onAuthStateChanged(async (user) => {
         if (user) {
             try {
-                const adminSnap = await adminDatabase.ref('admins/' + user.uid).once('value');
+                const adminSnap = await readAdminFlagWithRetry(user.uid);
                 isAdminAuthenticated = adminSnap.val() === true;
                 currentAdminUid = user.uid;
             } catch (e) {
@@ -1177,6 +1177,18 @@ function showToast(message, type = 'success') {
 // ============================================
 // 관리자: 패널 토글 / 탭
 // ============================================
+async function readAdminFlagWithRetry(uid, attempts = 3, delayMs = 400) {
+    for (let i = 0; i < attempts; i++) {
+        try {
+            const snap = await adminDatabase.ref('admins/' + uid).once('value');
+            return snap;
+        } catch (error) {
+            if (i === attempts - 1) throw error;
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+    }
+}
+
 async function toggleAdmin() {
     const panel = document.getElementById('adminPanel');
     if (panel.style.display === 'none') {
@@ -1194,7 +1206,7 @@ async function toggleAdmin() {
 
         try {
             const cred = await adminAuth.signInWithEmailAndPassword(ADMIN_EMAIL, inputPassword);
-            const adminSnap = await adminDatabase.ref('admins/' + cred.user.uid).once('value');
+            const adminSnap = await readAdminFlagWithRetry(cred.user.uid);
 
             if (adminSnap.val() === true) {
                 isAdminAuthenticated = true;
@@ -1660,41 +1672,70 @@ async function renderAdminInventoryCurrentList() {
     container.innerHTML = itemIds.map(itemId => {
         const holding = userInventory[itemId];
         return `
-            <div class="admin-list-item">
-                <div>
-                    <div><strong>${holding.name}</strong></div>
-                    <div style="font-size:0.75rem;color:var(--text-secondary);">${holding.countryName} · ${holding.themeName} · 개당 DM ${holding.price.toLocaleString()}</div>
+            <div class="admin-list-item" style="flex-direction: column; align-items: stretch;">
+                <div style="display:flex; justify-content:space-between; align-items:center; width:100%; flex-wrap: wrap; gap: 8px;">
+                    <div>
+                        <div><strong>${holding.name}</strong></div>
+                        <div style="font-size:0.75rem;color:var(--text-secondary);">${holding.countryName} · ${holding.themeName} · 개당 DM ${holding.price.toLocaleString()}</div>
+                    </div>
+                    <div style="font-weight:700; color:var(--accent-gold); font-size:1.05rem; white-space: nowrap;">
+                        보유 ${holding.quantity.toLocaleString()}개
+                    </div>
                 </div>
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <input type="number" class="item-qty" style="width:70px;" min="0" value="${holding.quantity}"
-                           id="adminInvQty-${itemId}">
-                    <button class="admin-btn" style="padding:6px 12px;font-size:0.75rem;background:var(--accent-blue);"
-                            onclick="adminUpdateInventoryQty('${itemId}')">저장</button>
-                    <button class="delete-btn" onclick="adminRemoveInventoryItem('${itemId}')">삭제</button>
+                <div style="display:flex; gap:8px; align-items:center; margin-top:12px; flex-wrap: wrap;">
+                    <input type="number" class="input-field" style="width:160px; padding:10px;" min="1"
+                           placeholder="증감시킬 수량 (예: 5000)" id="adminInvDelta-${itemId}">
+                    <button class="admin-btn" style="padding:8px 14px;font-size:0.8rem;background:var(--accent-green);color:var(--bg-primary);"
+                            onclick="adminAdjustInventoryQty('${itemId}', 1)">➕ 추가</button>
+                    <button class="admin-btn" style="padding:8px 14px;font-size:0.8rem;background:var(--accent-red);"
+                            onclick="adminAdjustInventoryQty('${itemId}', -1)">➖ 빼기</button>
+                    <button class="delete-btn" onclick="adminRemoveInventoryItem('${itemId}')">🗑️ 전량삭제</button>
                 </div>
             </div>
         `;
     }).join('');
 }
 
-async function adminUpdateInventoryQty(itemId) {
+// 현재 보유량을 계산할 필요 없이, "증감시킬 수량"만 입력하면
+// 서버에 저장된 최신 값을 기준으로 더하거나 빼줍니다.
+async function adminAdjustInventoryQty(itemId, sign) {
     if (!adminInventoryTargetUser) return;
-    const newQty = parseInt(document.getElementById(`adminInvQty-${itemId}`).value);
 
-    if (isNaN(newQty) || newQty < 0) { showToast('올바른 수량을 입력하세요!', 'error'); return; }
+    const deltaInput = document.getElementById(`adminInvDelta-${itemId}`);
+    const delta = parseInt(deltaInput.value);
+
+    if (isNaN(delta) || delta <= 0) {
+        showToast('증감시킬 수량을 입력하세요! (1 이상)', 'error');
+        return;
+    }
 
     try {
-        if (newQty === 0) {
+        const snap = await adminDatabase.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}`).once('value');
+        const current = snap.val();
+
+        if (!current) {
+            showToast('물품 정보를 찾을 수 없습니다!', 'error');
+            return;
+        }
+
+        const newQty = current.quantity + sign * delta;
+
+        if (newQty <= 0) {
             await adminDatabase.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}`).remove();
+            showToast(`수량이 0 이하가 되어 물품이 제거되었습니다. (${current.quantity.toLocaleString()} → 0)`, 'success');
         } else {
             await adminDatabase.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}/quantity`).set(newQty);
+            showToast(
+                `${sign > 0 ? '추가' : '차감'} 완료! (${current.quantity.toLocaleString()} → ${newQty.toLocaleString()})`,
+                'success'
+            );
         }
-        showToast('수량이 수정되었습니다!', 'success');
+
         renderAdminInventoryCurrentList();
         renderAdminUserList();
     } catch (error) {
-        console.error('수량 수정 실패:', error);
-        showToast('수량 수정 중 오류가 발생했습니다!', 'error');
+        console.error('수량 조정 실패:', error);
+        showToast('수량 조정 중 오류가 발생했습니다!', 'error');
     }
 }
 
