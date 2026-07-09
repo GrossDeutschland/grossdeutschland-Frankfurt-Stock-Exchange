@@ -393,7 +393,7 @@ textarea.input-field { resize: vertical; min-height: 70px; font-family: 'JetBrai
                     </div>
                     <div class="input-group" style="margin-bottom: 0;">
                         <label class="input-label">비밀번호</label>
-                        <input type="password" class="input-field" id="newUserPassword" placeholder="4자 이상">
+                        <input type="password" class="input-field" id="newUserPassword" placeholder="6자 이상">
                     </div>
                 </div>
                 <button class="admin-btn" onclick="adminCreateUser()">+ 사용자 추가</button>
@@ -516,7 +516,7 @@ textarea.input-field { resize: vertical; min-height: 70px; font-family: 'JetBrai
                 </div>
                 <div class="input-group">
                     <label class="input-label">비밀번호</label>
-                    <input type="password" class="input-field" id="signupPassword" placeholder="비밀번호 입력 (4자 이상)">
+                    <input type="password" class="input-field" id="signupPassword" placeholder="비밀번호 입력 (6자 이상)">
                 </div>
                 <div class="input-group">
                     <label class="input-label">비밀번호 확인</label>
@@ -547,11 +547,16 @@ const firebaseConfig = {
 };
 
 let database;
-let auth;
+let auth;      // 일반 유저(플레이어) 로그인 전용
+let adminAuth; // 관리자 로그인 전용 (별도 세션 - 서로 로그아웃시키지 않음)
 try {
     firebase.initializeApp(firebaseConfig);
     database = firebase.database();
     auth = firebase.auth();
+
+    const adminApp = firebase.initializeApp(firebaseConfig, 'adminApp');
+    adminAuth = adminApp.auth();
+
     console.log('✅ Firebase 연결 성공!');
 } catch (error) {
     console.error('❌ Firebase 연결 실패:', error);
@@ -566,8 +571,8 @@ const ADMIN_EMAIL = "lenashosha@gmail.com"; // 콘솔에서 만든 관리자 계
 let isAdminAuthenticated = false;
 let currentAdminUid = null;
 
-if (auth) {
-    auth.onAuthStateChanged(async (user) => {
+if (adminAuth) {
+    adminAuth.onAuthStateChanged(async (user) => {
         if (user) {
             try {
                 const adminSnap = await database.ref('admins/' + user.uid).once('value');
@@ -588,7 +593,8 @@ if (auth) {
 // ============================================
 // 전역 상태
 // ============================================
-let currentUser = null;
+let currentUser = null;    // 화면에 표시할 닉네임(아이디)
+let currentUserUid = null; // 실제 Firebase Auth uid
 let userCash = 10000000;
 let inventory = {};          // { itemId: {name, price, countryName, themeName, quantity} }
 let countries = {};          // { countryId: {id, name, flag} }
@@ -605,14 +611,22 @@ let pendingEditItemId = null;
 async function init() {
     subscribeToCatalog();
 
-    const savedUser = localStorage.getItem('fwb_currentUser');
-    if (savedUser && database) {
-        currentUser = savedUser;
-        await loadUserData();
-        document.getElementById('loginModal').style.display = 'none';
-    } else {
-        document.getElementById('loginModal').style.display = 'flex';
-    }
+    auth.onAuthStateChanged(async (user) => {
+        if (user) {
+            currentUserUid = user.uid;
+
+            const profileSnap = await database.ref('users/' + currentUserUid).once('value');
+            const profile = profileSnap.val();
+            currentUser = profile ? profile.displayName : 'Guest';
+
+            document.getElementById('loginModal').style.display = 'none';
+            await loadUserData();
+        } else {
+            currentUser = null;
+            currentUserUid = null;
+            document.getElementById('loginModal').style.display = 'flex';
+        }
+    });
 }
 
 function subscribeToCatalog() {
@@ -647,14 +661,13 @@ function subscribeToCatalog() {
 }
 
 async function loadUserData() {
-    if (!currentUser || !database) {
-        currentUser = null;
+    if (!currentUserUid || !database) {
         userCash = 10000000;
         inventory = {};
         return;
     }
 
-    database.ref('users/' + currentUser).on('value', (snapshot) => {
+    database.ref('users/' + currentUserUid).on('value', (snapshot) => {
         const userData = snapshot.val();
         if (!userData) {
             userCash = 10000000;
@@ -667,16 +680,21 @@ async function loadUserData() {
         updateBalance();
         renderInventory();
     });
+
+    // 로그인 시, 나에게 온 선물이 있으면 자동으로 받습니다
+    processIncomingGifts();
 }
 
 // ============================================
-// 🔐 비밀번호 해시 처리 (F12/네트워크 탭에 평문 노출 방지)
-// ------------------------------------------------
-// SHA-256으로 비밀번호를 되돌릴 수 없게 변환한 뒤 DB에 저장/비교합니다.
-// 기존 계정(평문 저장)은 다음 로그인 성공 시 자동으로 해시로 업그레이드됩니다.
-// index.html과 동일한 로직이며, 같은 users 노드를 공유합니다.
+// 🔐 로그인/회원가입 (Firebase Authentication 기반 + 기존 계정 자동 이전)
+// index.html과 완전히 동일한 로직이며, 같은 users/usernames 노드를 공유합니다.
 // ============================================
-async function hashPassword(password) {
+function idToFakeEmail(userId) {
+    const safe = encodeURIComponent(userId).replace(/%/g, '').toLowerCase();
+    return 'u' + safe + '@frankfurt-game.local';
+}
+
+async function hashPasswordLegacy(password) {
     const encoder = new TextEncoder();
     const data = encoder.encode(password);
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -685,9 +703,11 @@ async function hashPassword(password) {
         .join('');
 }
 
-// ============================================
-// 로그인 / 회원가입 / 로그아웃 (증권거래소와 계정 공유)
-// ============================================
+async function findUidByUsername(username) {
+    const snap = await database.ref('usernames/' + username).once('value');
+    return snap.exists() ? snap.val() : null;
+}
+
 async function loginUser() {
     const userId = document.getElementById('loginUserId').value.trim();
     const password = document.getElementById('loginPassword').value;
@@ -696,33 +716,84 @@ async function loginUser() {
     if (!database) { showToast('Firebase 연결이 필요합니다!', 'error'); return; }
 
     try {
-        const snapshot = await database.ref('users/' + userId).once('value');
-        const userData = snapshot.val();
+        const uidMapSnap = await database.ref('usernames/' + userId).once('value');
 
-        if (!userData) { showToast('존재하지 않는 사용자입니다!', 'error'); return; }
+        if (uidMapSnap.exists()) {
+            await auth.signInWithEmailAndPassword(idToFakeEmail(userId), password);
+        } else {
+            const legacySnap = await database.ref('users/' + userId).once('value');
+            const legacyData = legacySnap.val();
 
-        const inputHash = await hashPassword(password);
+            if (!legacyData) { showToast('존재하지 않는 사용자입니다!', 'error'); return; }
 
-        if (userData.password === password) {
-            // 아직 평문으로 저장된 구버전 계정 → 로그인 성공했으니 해시로 업그레이드
-            await database.ref('users/' + userId).update({ password: inputHash });
-        } else if (userData.password !== inputHash) {
-            showToast('비밀번호가 올바르지 않습니다!', 'error');
-            return;
+            const inputHash = await hashPasswordLegacy(password);
+            const passwordOk = legacyData.password === password || legacyData.password === inputHash;
+
+            if (!passwordOk) { showToast('비밀번호가 올바르지 않습니다!', 'error'); return; }
+
+            await migrateAccount(userId, password, legacyData);
         }
 
-        currentUser = userId;
-        localStorage.setItem('fwb_currentUser', userId);
-        await loadUserData();
-
-        document.getElementById('loginModal').style.display = 'none';
         document.getElementById('loginUserId').value = '';
         document.getElementById('loginPassword').value = '';
-
         showToast(`환영합니다, ${userId}님!`, 'success');
     } catch (error) {
         console.error('로그인 실패:', error);
-        showToast('로그인 중 오류가 발생했습니다!', 'error');
+
+        if (error.code === 'auth/weak-password') {
+            promptStrongerPasswordAndRetry(userId);
+        } else if (error.code === 'auth/wrong-password') {
+            showToast('비밀번호가 올바르지 않습니다!', 'error');
+        } else if (error.code === 'auth/user-not-found') {
+            showToast('존재하지 않는 사용자입니다!', 'error');
+        } else if (error.code === 'auth/too-many-requests') {
+            showToast('시도가 너무 많습니다. 잠시 후 다시 시도하세요.', 'error');
+        } else {
+            showToast('로그인 중 오류가 발생했습니다!', 'error');
+        }
+    }
+}
+
+async function migrateAccount(userId, password, legacyData) {
+    const cred = await auth.createUserWithEmailAndPassword(idToFakeEmail(userId), password);
+    const uid = cred.user.uid;
+
+    await database.ref('users/' + uid).set({
+        displayName: userId,
+        cash: legacyData.cash ?? 10000000,
+        portfolio: legacyData.portfolio || {},
+        inventory: legacyData.inventory || {},
+        createdAt: legacyData.createdAt || new Date().toISOString()
+    });
+
+    await database.ref('usernames/' + userId).set(uid);
+
+    showToast(`${userId}님 계정이 새 보안 시스템으로 안전하게 이전되었습니다!`, 'success');
+}
+
+async function promptStrongerPasswordAndRetry(userId) {
+    showToast('보안 강화를 위해 새 비밀번호(6자 이상)가 필요합니다!', 'error');
+
+    const newPassword = prompt(
+        `${userId}님, 기존 비밀번호가 너무 짧아 시스템을 업그레이드할 수 없습니다.\n` +
+        `앞으로 사용할 새 비밀번호(6자 이상)를 입력해주세요:`
+    );
+
+    if (!newPassword || newPassword.length < 6) {
+        showToast('6자 이상의 비밀번호를 입력해야 합니다!', 'error');
+        return;
+    }
+
+    try {
+        const legacySnap = await database.ref('users/' + userId).once('value');
+        const legacyData = legacySnap.val();
+
+        await migrateAccount(userId, newPassword, legacyData);
+        document.getElementById('loginModal').style.display = 'none';
+        showToast('이전 완료! 앞으로는 방금 입력한 새 비밀번호로 로그인하세요.', 'success');
+    } catch (error) {
+        console.error('이전 실패:', error);
+        showToast('계정 이전 중 오류가 발생했습니다!', 'error');
     }
 }
 
@@ -732,40 +803,52 @@ async function signupUser() {
     const passwordConfirm = document.getElementById('signupPasswordConfirm').value;
 
     if (!userId || userId.length < 4) { showToast('ID는 4자 이상이어야 합니다!', 'error'); return; }
-    if (!password || password.length < 4) { showToast('비밀번호는 4자 이상이어야 합니다!', 'error'); return; }
+    if (!/^[a-zA-Z0-9_]+$/.test(userId)) { showToast('ID는 영문, 숫자, 밑줄(_)만 사용 가능합니다!', 'error'); return; }
+    if (!password || password.length < 6) { showToast('비밀번호는 6자 이상이어야 합니다!', 'error'); return; }
     if (password !== passwordConfirm) { showToast('비밀번호가 일치하지 않습니다!', 'error'); return; }
     if (!database) { showToast('Firebase 연결이 필요합니다!', 'error'); return; }
 
     try {
-        const snapshot = await database.ref('users/' + userId).once('value');
-        if (snapshot.exists()) { showToast('이미 존재하는 ID입니다!', 'error'); return; }
+        const takenSnap = await database.ref('usernames/' + userId).once('value');
+        if (takenSnap.exists()) { showToast('이미 존재하는 ID입니다!', 'error'); return; }
 
-        const hashedPassword = await hashPassword(password);
+        const cred = await auth.createUserWithEmailAndPassword(idToFakeEmail(userId), password);
+        const uid = cred.user.uid;
 
-        await database.ref('users/' + userId).set({
-            password: hashedPassword,
+        await database.ref('users/' + uid).set({
+            displayName: userId,
             cash: 10000000,
             portfolio: {},
             inventory: {},
             createdAt: new Date().toISOString()
         });
 
+        await database.ref('usernames/' + userId).set(uid);
+
         showToast('회원가입 성공! 로그인해주세요.', 'success');
+        await auth.signOut();
+
         document.getElementById('signupUserId').value = '';
         document.getElementById('signupPassword').value = '';
         document.getElementById('signupPasswordConfirm').value = '';
         switchToLogin();
     } catch (error) {
         console.error('회원가입 실패:', error);
-        showToast('회원가입 중 오류가 발생했습니다!', 'error');
+        if (error.code === 'auth/email-already-in-use') {
+            showToast('이미 존재하는 ID입니다!', 'error');
+        } else {
+            showToast('회원가입 중 오류가 발생했습니다!', 'error');
+        }
     }
 }
 
 function logout() {
     if (!confirm('로그아웃 하시겠습니까?')) return;
-    currentUser = null;
-    localStorage.removeItem('fwb_currentUser');
-    location.reload();
+    auth.signOut().then(() => {
+        currentUser = null;
+        currentUserUid = null;
+        location.reload();
+    });
 }
 
 function switchToSignup() {
@@ -912,7 +995,7 @@ async function confirmBuy() {
     if (total > userCash) { showToast('현금이 부족합니다!', 'error'); return; }
 
     try {
-        const snapshot = await database.ref('users/' + currentUser).once('value');
+        const snapshot = await database.ref('users/' + currentUserUid).once('value');
         const userData = snapshot.val() || {};
         const currentInventory = userData.inventory || {};
         const existing = currentInventory[item.id];
@@ -930,7 +1013,7 @@ async function confirmBuy() {
 
         const newCash = (userData.cash !== undefined ? userData.cash : 10000000) - total;
 
-        await database.ref('users/' + currentUser).update({
+        await database.ref('users/' + currentUserUid).update({
             cash: newCash,
             inventory: currentInventory,
             lastUpdate: new Date().toISOString()
@@ -985,6 +1068,11 @@ function openGiftModal(itemId) {
     document.getElementById('giftModal').classList.add('active');
 }
 
+// ============================================
+// 선물하기 (Cloud Functions 없이 "대기함" 방식)
+// 원리: 나는 내 보관함만 직접 고칠 수 있음. 상대방에게는 "선물 요청서"만
+// 남기고, 상대방이 로그인했을 때 자기 스스로 받아갑니다.
+// ============================================
 async function confirmGift() {
     const itemId = pendingGiftItemId;
     const holding = inventory[itemId];
@@ -998,36 +1086,36 @@ async function confirmGift() {
     if (qty > holding.quantity) { showToast('보유 수량이 부족합니다!', 'error'); return; }
 
     try {
-        const recipientSnapshot = await database.ref('users/' + recipientId).once('value');
-        if (!recipientSnapshot.exists()) { showToast('존재하지 않는 사용자입니다!', 'error'); return; }
-        const recipientData = recipientSnapshot.val();
+        const recipientUid = await findUidByUsername(recipientId);
+        if (!recipientUid) { showToast('존재하지 않는 사용자입니다!', 'error'); return; }
 
-        // 보내는 사람 보관함 갱신
-        const senderSnapshot = await database.ref('users/' + currentUser).once('value');
-        const senderData = senderSnapshot.val() || {};
-        const senderInventory = senderData.inventory || {};
+        // 1) 내 보관함에서 먼저 차감 (내 데이터라 내가 직접 써도 됨)
+        const invRef = database.ref('users/' + currentUserUid + '/inventory/' + itemId);
+        const txResult = await invRef.transaction((current) => {
+            if (!current || current.quantity < qty) return; // 취소
+            const newQty = current.quantity - qty;
+            return newQty > 0 ? { ...current, quantity: newQty } : null;
+        });
 
-        if (!senderInventory[itemId] || senderInventory[itemId].quantity < qty) {
+        if (!txResult.committed) {
             showToast('보유 수량이 부족합니다!', 'error');
             return;
         }
 
-        senderInventory[itemId].quantity -= qty;
-        if (senderInventory[itemId].quantity <= 0) delete senderInventory[itemId];
-
-        // 받는 사람 보관함 갱신
-        const recipientInventory = recipientData.inventory || {};
-        const existing = recipientInventory[itemId];
-        recipientInventory[itemId] = {
+        // 2) 상대방에게 "선물 요청서" 남김 (상대방이 로그인하면 자동으로 받아감)
+        const giftRef = database.ref('gifts').push();
+        await giftRef.set({
+            from: currentUserUid,
+            to: recipientUid,
+            itemId: itemId,
             name: holding.name,
             price: holding.price,
             countryName: holding.countryName,
             themeName: holding.themeName,
-            quantity: (existing ? existing.quantity : 0) + qty
-        };
-
-        await database.ref('users/' + currentUser).update({ inventory: senderInventory });
-        await database.ref('users/' + recipientId).update({ inventory: recipientInventory });
+            quantity: qty,
+            status: 'pending',
+            createdAt: new Date().toISOString()
+        });
 
         closeModal('giftModal');
         showToast(`${recipientId}님께 ${holding.name} ${qty}개 선물 완료!`, 'success');
@@ -1035,6 +1123,36 @@ async function confirmGift() {
         console.error('선물 실패:', error);
         showToast('선물 중 오류가 발생했습니다!', 'error');
     }
+}
+
+// 로그인 시 나에게 온 선물 요청서를 자동으로 처리
+function processIncomingGifts() {
+    if (!database || !currentUserUid) return;
+
+    database.ref('gifts')
+        .orderByChild('to')
+        .equalTo(currentUserUid)
+        .on('child_added', async (snapshot) => {
+            const gift = snapshot.val();
+            if (!gift || gift.status !== 'pending') return;
+
+            try {
+                const invRef = database.ref('users/' + currentUserUid + '/inventory/' + gift.itemId);
+                await invRef.transaction((current) => ({
+                    name: gift.name,
+                    price: gift.price,
+                    countryName: gift.countryName,
+                    themeName: gift.themeName,
+                    quantity: (current ? current.quantity : 0) + gift.quantity
+                }));
+
+                await database.ref('gifts/' + snapshot.key + '/status').set('completed');
+
+                showToast(`${gift.name} ${gift.quantity}개를 선물받았습니다!`, 'success');
+            } catch (error) {
+                console.error('선물 수신 처리 실패:', error);
+            }
+        });
 }
 
 function closeModal(id) {
@@ -1073,7 +1191,7 @@ async function toggleAdmin() {
         if (inputPassword === null || inputPassword === '') return;
 
         try {
-            const cred = await auth.signInWithEmailAndPassword(ADMIN_EMAIL, inputPassword);
+            const cred = await adminAuth.signInWithEmailAndPassword(ADMIN_EMAIL, inputPassword);
             const adminSnap = await database.ref('admins/' + cred.user.uid).once('value');
 
             if (adminSnap.val() === true) {
@@ -1085,7 +1203,7 @@ async function toggleAdmin() {
                 renderAdminUserList();
                 showToast('관리자 모드 활성화!', 'success');
             } else {
-                await auth.signOut();
+                await adminAuth.signOut();
                 showToast('관리자 권한이 없는 계정입니다!', 'error');
             }
         } catch (error) {
@@ -1098,7 +1216,7 @@ async function toggleAdmin() {
 }
 
 function logoutAdmin() {
-    if (auth) auth.signOut();
+    if (adminAuth) adminAuth.signOut();
     const panel = document.getElementById('adminPanel');
     if (panel) panel.style.display = 'none';
     showToast('관리자 로그아웃 되었습니다.', 'success');
@@ -1416,26 +1534,37 @@ async function deleteItem(itemId) {
 // ============================================
 // 관리자: 사용자 관리
 // ============================================
+// 관리자가 새 사용자를 만들 때는, 완전히 독립된 임시 Firebase 앱
+// 인스턴스를 써서 계정을 생성합니다. 이렇게 해야 관리자 자신의
+// 세션이나 다른 플레이어의 로그인 세션에 전혀 영향을 주지 않습니다.
 async function adminCreateUser() {
     const userId = document.getElementById('newUserId').value.trim();
     const password = document.getElementById('newUserPassword').value;
 
     if (!userId || userId.length < 4) { showToast('ID는 4자 이상이어야 합니다!', 'error'); return; }
-    if (!password || password.length < 4) { showToast('비밀번호는 4자 이상이어야 합니다!', 'error'); return; }
+    if (!/^[a-zA-Z0-9_]+$/.test(userId)) { showToast('ID는 영문, 숫자, 밑줄(_)만 사용 가능합니다!', 'error'); return; }
+    if (!password || password.length < 6) { showToast('비밀번호는 6자 이상이어야 합니다!', 'error'); return; }
 
+    let tempApp = null;
     try {
-        const snapshot = await database.ref('users/' + userId).once('value');
-        if (snapshot.exists()) { showToast('이미 존재하는 ID입니다!', 'error'); return; }
+        const takenSnap = await database.ref('usernames/' + userId).once('value');
+        if (takenSnap.exists()) { showToast('이미 존재하는 ID입니다!', 'error'); return; }
 
-        const hashedPassword = await hashPassword(password);
+        tempApp = firebase.initializeApp(firebaseConfig, 'tempCreateUser_' + Date.now());
+        const tempAuth = tempApp.auth();
 
-        await database.ref('users/' + userId).set({
-            password: hashedPassword,
+        const cred = await tempAuth.createUserWithEmailAndPassword(idToFakeEmail(userId), password);
+        const uid = cred.user.uid;
+
+        await database.ref('users/' + uid).set({
+            displayName: userId,
             cash: 10000000,
             portfolio: {},
             inventory: {},
             createdAt: new Date().toISOString()
         });
+
+        await database.ref('usernames/' + userId).set(uid);
 
         showToast(`${userId} 사용자 생성 완료!`, 'success');
         document.getElementById('newUserId').value = '';
@@ -1443,7 +1572,13 @@ async function adminCreateUser() {
         renderAdminUserList();
     } catch (error) {
         console.error('사용자 생성 실패:', error);
-        showToast('사용자 생성 중 오류가 발생했습니다!', 'error');
+        if (error.code === 'auth/email-already-in-use') {
+            showToast('이미 존재하는 ID입니다!', 'error');
+        } else {
+            showToast('사용자 생성 중 오류가 발생했습니다!', 'error');
+        }
+    } finally {
+        if (tempApp) await tempApp.delete();
     }
 }
 
@@ -1460,21 +1595,22 @@ async function renderAdminUserList() {
             return;
         }
 
-        container.innerHTML = Object.keys(usersData).map(userId => {
-            const userData = usersData[userId];
+        container.innerHTML = Object.keys(usersData).map(uid => {
+            const userData = usersData[uid];
+            const name = userData.displayName || uid;
             const cash = userData.cash !== undefined ? userData.cash : 10000000;
             const itemCount = userData.inventory ? Object.keys(userData.inventory).length : 0;
 
             return `
                 <div class="admin-list-item">
                     <div>
-                        <div><strong>${userId}</strong></div>
+                        <div><strong>${name}</strong></div>
                         <div style="font-size:0.8rem;color:var(--text-secondary);">현금: DM ${cash.toLocaleString()} · 보관함 ${itemCount}종</div>
                     </div>
                     <div style="display:flex;gap:8px;">
                         <button class="admin-btn" style="padding:6px 12px;font-size:0.75rem;background:var(--accent-gold);color:var(--bg-primary);"
-                                onclick="openAdminInventoryModal('${userId}')">📦 보유물품 수정</button>
-                        <button class="delete-btn" onclick="adminDeleteUser('${userId}')">🗑️ 삭제</button>
+                                onclick="openAdminInventoryModal('${uid}', '${name}')">📦 보유물품 수정</button>
+                        <button class="delete-btn" onclick="adminDeleteUser('${uid}', '${name}')">🗑️ 삭제</button>
                     </div>
                 </div>
             `;
@@ -1488,11 +1624,11 @@ async function renderAdminUserList() {
 // ============================================
 // 관리자: 사용자 보유물품 수정
 // ============================================
-let adminInventoryTargetUser = null;
+let adminInventoryTargetUser = null; // uid
 
-async function openAdminInventoryModal(userId) {
-    adminInventoryTargetUser = userId;
-    document.getElementById('adminInventoryUserLabel').textContent = userId;
+async function openAdminInventoryModal(uid, name) {
+    adminInventoryTargetUser = uid;
+    document.getElementById('adminInventoryUserLabel').textContent = name;
 
     const itemOptions = Object.values(items).map(item => {
         const country = countries[item.countryId] || {};
@@ -1611,13 +1747,14 @@ async function adminAddInventoryItem() {
     }
 }
 
-async function adminDeleteUser(userId) {
-    if (userId === currentUser) { showToast('자기 자신은 삭제할 수 없습니다!', 'error'); return; }
-    if (!confirm(`정말로 ${userId}님의 계정을 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다!`)) return;
+async function adminDeleteUser(uid, name) {
+    if (uid === currentUserUid) { showToast('자기 자신은 삭제할 수 없습니다!', 'error'); return; }
+    if (!confirm(`정말로 ${name}님의 계정을 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다!`)) return;
 
     try {
-        await database.ref('users/' + userId).remove();
-        showToast(`${userId}님의 계정이 삭제되었습니다.`, 'success');
+        await database.ref('users/' + uid).remove();
+        await database.ref('usernames/' + name).remove();
+        showToast(`${name}님의 계정이 삭제되었습니다.`, 'success');
         renderAdminUserList();
     } catch (error) {
         console.error('계정 삭제 실패:', error);
