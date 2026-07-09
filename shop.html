@@ -547,8 +547,9 @@ const firebaseConfig = {
 };
 
 let database;
-let auth;      // 일반 유저(플레이어) 로그인 전용
-let adminAuth; // 관리자 로그인 전용 (별도 세션 - 서로 로그아웃시키지 않음)
+let auth;         // 일반 유저(플레이어) 로그인 전용
+let adminAuth;    // 관리자 로그인 전용 (별도 세션 - 서로 로그아웃시키지 않음)
+let adminDatabase; // 관리자 로그인 세션으로 DB에 접근할 때 반드시 이걸 사용
 try {
     firebase.initializeApp(firebaseConfig);
     database = firebase.database();
@@ -556,6 +557,7 @@ try {
 
     const adminApp = firebase.initializeApp(firebaseConfig, 'adminApp');
     adminAuth = adminApp.auth();
+    adminDatabase = adminApp.database();
 
     console.log('✅ Firebase 연결 성공!');
 } catch (error) {
@@ -575,7 +577,7 @@ if (adminAuth) {
     adminAuth.onAuthStateChanged(async (user) => {
         if (user) {
             try {
-                const adminSnap = await database.ref('admins/' + user.uid).once('value');
+                const adminSnap = await adminDatabase.ref('admins/' + user.uid).once('value');
                 isAdminAuthenticated = adminSnap.val() === true;
                 currentAdminUid = user.uid;
             } catch (e) {
@@ -1192,7 +1194,7 @@ async function toggleAdmin() {
 
         try {
             const cred = await adminAuth.signInWithEmailAndPassword(ADMIN_EMAIL, inputPassword);
-            const adminSnap = await database.ref('admins/' + cred.user.uid).once('value');
+            const adminSnap = await adminDatabase.ref('admins/' + cred.user.uid).once('value');
 
             if (adminSnap.val() === true) {
                 isAdminAuthenticated = true;
@@ -1241,10 +1243,10 @@ async function addCountry() {
     const flag = document.getElementById('newCountryFlag').value.trim();
 
     if (!name) { showToast('국가명을 입력하세요!', 'error'); return; }
-    if (!database) { showToast('Firebase 연결이 필요합니다!', 'error'); return; }
+    if (!adminDatabase) { showToast('Firebase 연결이 필요합니다!', 'error'); return; }
 
     try {
-        const newRef = database.ref('shop_countries').push();
+        const newRef = adminDatabase.ref('shop_countries').push();
         await newRef.set({ id: newRef.key, name: name, flag: flag || '🏳️' });
         showToast(`${name} 추가 완료!`, 'success');
         document.getElementById('newCountryName').value = '';
@@ -1290,7 +1292,7 @@ async function deleteCountry(countryId) {
         themeIdsToDelete.forEach(id => { updates[`shop_themes/${id}`] = null; });
         itemIdsToDelete.forEach(id => { updates[`shop_items/${id}`] = null; });
 
-        await database.ref().update(updates);
+        await adminDatabase.ref().update(updates);
 
         if (selectedCountryId === countryId) selectedCountryId = null;
         showToast(`${c.name} 삭제 완료!`, 'success');
@@ -1332,7 +1334,7 @@ async function addTheme() {
     if (!name) { showToast('테마명을 입력하세요!', 'error'); return; }
 
     try {
-        const newRef = database.ref('shop_themes').push();
+        const newRef = adminDatabase.ref('shop_themes').push();
         await newRef.set({ id: newRef.key, countryId: countryId, name: name });
         showToast(`${name} 테마 추가 완료!`, 'success');
         document.getElementById('newThemeName').value = '';
@@ -1372,7 +1374,7 @@ async function deleteTheme(themeId) {
         updates[`shop_themes/${themeId}`] = null;
         itemIdsToDelete.forEach(id => { updates[`shop_items/${id}`] = null; });
 
-        await database.ref().update(updates);
+        await adminDatabase.ref().update(updates);
         showToast(`"${t.name}" 테마 삭제 완료!`, 'success');
         renderAdminThemeList();
     } catch (error) {
@@ -1409,7 +1411,7 @@ async function addItem() {
     if (price <= 0) { showToast('올바른 가격을 입력하세요!', 'error'); return; }
 
     try {
-        const newRef = database.ref('shop_items').push();
+        const newRef = adminDatabase.ref('shop_items').push();
         await newRef.set({
             id: newRef.key, countryId, themeId, name, price,
             description: description || '', image: image || ''
@@ -1500,7 +1502,7 @@ async function confirmEditItem() {
     if (isNaN(price) || price <= 0) { showToast('올바른 가격을 입력하세요!', 'error'); return; }
 
     try {
-        await database.ref(`shop_items/${itemId}`).update({
+        await adminDatabase.ref(`shop_items/${itemId}`).update({
             name: name,
             price: price,
             description: description || '',
@@ -1522,7 +1524,7 @@ async function deleteItem(itemId) {
     if (!confirm(`정말로 ${item.name}을(를) 삭제하시겠습니까?`)) return;
 
     try {
-        await database.ref(`shop_items/${itemId}`).remove();
+        await adminDatabase.ref(`shop_items/${itemId}`).remove();
         showToast(`${item.name} 삭제 완료!`, 'success');
         renderAdminItemList();
     } catch (error) {
@@ -1547,7 +1549,7 @@ async function adminCreateUser() {
 
     let tempApp = null;
     try {
-        const takenSnap = await database.ref('usernames/' + userId).once('value');
+        const takenSnap = await adminDatabase.ref('usernames/' + userId).once('value');
         if (takenSnap.exists()) { showToast('이미 존재하는 ID입니다!', 'error'); return; }
 
         tempApp = firebase.initializeApp(firebaseConfig, 'tempCreateUser_' + Date.now());
@@ -1556,7 +1558,7 @@ async function adminCreateUser() {
         const cred = await tempAuth.createUserWithEmailAndPassword(idToFakeEmail(userId), password);
         const uid = cred.user.uid;
 
-        await database.ref('users/' + uid).set({
+        await adminDatabase.ref('users/' + uid).set({
             displayName: userId,
             cash: 10000000,
             portfolio: {},
@@ -1564,7 +1566,7 @@ async function adminCreateUser() {
             createdAt: new Date().toISOString()
         });
 
-        await database.ref('usernames/' + userId).set(uid);
+        await adminDatabase.ref('usernames/' + userId).set(uid);
 
         showToast(`${userId} 사용자 생성 완료!`, 'success');
         document.getElementById('newUserId').value = '';
@@ -1683,9 +1685,9 @@ async function adminUpdateInventoryQty(itemId) {
 
     try {
         if (newQty === 0) {
-            await database.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}`).remove();
+            await adminDatabase.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}`).remove();
         } else {
-            await database.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}/quantity`).set(newQty);
+            await adminDatabase.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}/quantity`).set(newQty);
         }
         showToast('수량이 수정되었습니다!', 'success');
         renderAdminInventoryCurrentList();
@@ -1701,7 +1703,7 @@ async function adminRemoveInventoryItem(itemId) {
     if (!confirm('이 물품을 사용자의 보관함에서 완전히 제거하시겠습니까?')) return;
 
     try {
-        await database.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}`).remove();
+        await adminDatabase.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}`).remove();
         showToast('물품이 제거되었습니다!', 'success');
         renderAdminInventoryCurrentList();
         renderAdminUserList();
@@ -1726,10 +1728,10 @@ async function adminAddInventoryItem() {
         const country = countries[item.countryId] || {};
         const theme = themes[item.themeId] || {};
 
-        const snapshot = await database.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}`).once('value');
+        const snapshot = await adminDatabase.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}`).once('value');
         const existing = snapshot.val();
 
-        await database.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}`).set({
+        await adminDatabase.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}`).set({
             name: item.name,
             price: item.price,
             countryName: country.name || '',
@@ -1752,8 +1754,8 @@ async function adminDeleteUser(uid, name) {
     if (!confirm(`정말로 ${name}님의 계정을 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다!`)) return;
 
     try {
-        await database.ref('users/' + uid).remove();
-        await database.ref('usernames/' + name).remove();
+        await adminDatabase.ref('users/' + uid).remove();
+        await adminDatabase.ref('usernames/' + name).remove();
         showToast(`${name}님의 계정이 삭제되었습니다.`, 'success');
         renderAdminUserList();
     } catch (error) {
