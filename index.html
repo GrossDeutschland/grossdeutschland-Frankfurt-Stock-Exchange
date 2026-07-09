@@ -661,7 +661,35 @@ header {
     background: var(--accent-purple);
 }
 
-.admin-panel {
+.stock-country-tab {
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+}
+
+.stock-country-tab:hover {
+    border-color: var(--accent-blue);
+    transform: translateX(3px);
+}
+
+.stock-country-tab.active {
+    border-color: var(--accent-blue);
+    background: linear-gradient(90deg, var(--bg-tertiary), rgba(0, 212, 255, 0.1));
+}
+
+.stock-country-flag {
+    font-size: 1.1rem;
+}
+
+
     background: var(--bg-secondary);
     border: 1px solid var(--accent-purple);
     border-radius: 12px;
@@ -920,6 +948,8 @@ header {
         <div class="dashboard">
             <!-- Stock List Panel -->
             <div class="stock-list">
+                <div class="panel-title">🌍 국가</div>
+                <div id="stockCountryTabContainer" style="margin-bottom: 20px;"></div>
                 <div class="panel-title">📊 종목 리스트</div>
                 <div id="stockListContainer"></div>
             </div>
@@ -1006,6 +1036,22 @@ header {
             </div>
             
             <div style="margin-bottom: 30px;">
+                <h3 style="color: var(--accent-blue); margin-bottom: 15px; font-size: 1rem;">🌍 종목 국가 관리</h3>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 15px;">
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">국가명</label>
+                        <input type="text" class="input-field" id="newStockCountryName" placeholder="예: 대독일공화국">
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">국기 이모지 (선택)</label>
+                        <input type="text" class="input-field" id="newStockCountryFlag" placeholder="🏳️">
+                    </div>
+                </div>
+                <button class="admin-btn" onclick="addStockCountry()">+ 국가 추가</button>
+                <div style="margin-top: 15px;" id="adminStockCountryList"></div>
+            </div>
+
+            <div style="margin-bottom: 30px;">
                 <h3 style="color: var(--accent-purple); margin-bottom: 15px; font-size: 1rem;">새 기업 추가</h3>
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 15px;">
                     <div class="input-group" style="margin-bottom: 0;">
@@ -1032,6 +1078,10 @@ header {
                             <option value="food">Food</option>
                             <option value="realestate">Real Estate</option>
                         </select>
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">국가</label>
+                        <select class="input-field" id="newStockCountrySelect"></select>
                     </div>
                 </div>
                 <button class="admin-btn" onclick="addNewStock()">+ 기업 추가</button>
@@ -1213,6 +1263,8 @@ const INITIAL_STOCKS = [
 ];
 
 let currentStock = null;
+let stockCountries = {};       // { countryId: {id, name, flag} }
+let selectedStockCountryId = null;
 let tradeMode = 'buy';
 let userCash = 10000000;
 let portfolio = {};
@@ -1249,6 +1301,168 @@ function subscribeToStocks() {
             updateBalance();
         }
     });
+}
+
+// ============================================
+// 🌍 증권거래소 전용 국가 목록
+// ============================================
+function subscribeToStockCountries() {
+    if (!database) return;
+
+    database.ref('stock_countries').on('value', (snapshot) => {
+        stockCountries = snapshot.val() || {};
+
+        if (!selectedStockCountryId) {
+            const ids = Object.keys(stockCountries);
+            if (ids.length > 0) selectedStockCountryId = ids[0];
+        }
+
+        renderStockCountryTabs();
+        renderStockList();
+        populateNewStockCountrySelect();
+        renderAdminStockCountryList();
+    });
+}
+
+function renderStockCountryTabs() {
+    const container = document.getElementById('stockCountryTabContainer');
+    if (!container) return;
+
+    const ids = Object.keys(stockCountries);
+
+    if (ids.length === 0) {
+        container.innerHTML = '<div style="font-size:0.8rem;color:var(--text-secondary);">등록된 국가가 없습니다</div>';
+        return;
+    }
+
+    container.innerHTML = ids.map(id => {
+        const c = stockCountries[id];
+        return `
+            <div class="stock-country-tab ${id === selectedStockCountryId ? 'active' : ''}" onclick="selectStockCountry('${id}')">
+                <span class="stock-country-flag">${c.flag || '🏳️'}</span>
+                <span>${c.name}</span>
+            </div>
+        `;
+    }).join('');
+}
+
+function selectStockCountry(countryId) {
+    selectedStockCountryId = countryId;
+    renderStockCountryTabs();
+    renderStockList();
+}
+
+function populateNewStockCountrySelect() {
+    const select = document.getElementById('newStockCountrySelect');
+    if (!select) return;
+
+    const options = Object.keys(stockCountries).map(id =>
+        `<option value="${id}">${stockCountries[id].flag || '🏳️'} ${stockCountries[id].name}</option>`
+    ).join('');
+
+    const prev = select.value;
+    select.innerHTML = options || '<option value="">국가를 먼저 추가하세요</option>';
+    if (prev && stockCountries[prev]) select.value = prev;
+}
+
+async function addStockCountry() {
+    const name = document.getElementById('newStockCountryName').value.trim();
+    const flag = document.getElementById('newStockCountryFlag').value.trim();
+
+    if (!name) {
+        showToast('국가명을 입력하세요!', 'error');
+        return;
+    }
+    if (!adminDatabase) {
+        showToast('관리자로 로그인이 필요합니다!', 'error');
+        return;
+    }
+
+    try {
+        const newRef = adminDatabase.ref('stock_countries').push();
+        await newRef.set({ id: newRef.key, name: name, flag: flag || '🏳️' });
+        showToast(`${name} 추가 완료!`, 'success');
+        document.getElementById('newStockCountryName').value = '';
+        document.getElementById('newStockCountryFlag').value = '';
+    } catch (error) {
+        console.error('국가 추가 실패:', error);
+        showToast('국가 추가 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+function renderAdminStockCountryList() {
+    const container = document.getElementById('adminStockCountryList');
+    if (!container) return;
+
+    const ids = Object.keys(stockCountries);
+    if (ids.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:12px;">등록된 국가가 없습니다</div>';
+        return;
+    }
+
+    container.innerHTML = ids.map(id => {
+        const c = stockCountries[id];
+        return `
+            <div class="stock-admin-item">
+                <div>${c.flag || '🏳️'} <strong>${c.name}</strong></div>
+                <button class="delete-stock-btn" onclick="deleteStockCountry('${id}')">삭제</button>
+            </div>
+        `;
+    }).join('');
+}
+
+async function deleteStockCountry(countryId) {
+    const c = stockCountries[countryId];
+    if (!c) return;
+
+    const stocksInCountry = stocks.filter(s => s.countryId === countryId);
+    if (stocksInCountry.length > 0) {
+        showToast(`${c.name}에 속한 종목(${stocksInCountry.length}개)이 있어 삭제할 수 없습니다. 먼저 종목을 다른 국가로 옮기거나 삭제하세요.`, 'error');
+        return;
+    }
+
+    if (!confirm(`정말로 ${c.name}을(를) 삭제하시겠습니까?`)) return;
+    if (!adminDatabase) {
+        showToast('관리자로 로그인이 필요합니다!', 'error');
+        return;
+    }
+
+    try {
+        await adminDatabase.ref('stock_countries/' + countryId).remove();
+        if (selectedStockCountryId === countryId) selectedStockCountryId = null;
+        showToast(`${c.name} 삭제 완료!`, 'success');
+    } catch (error) {
+        console.error('국가 삭제 실패:', error);
+        showToast('국가 삭제 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+// 관리자가 처음 이 기능을 켤 때: 국가 목록이 비어있으면 "대독일공화국"을
+// 기본값으로 만들고, 국가가 지정 안 된 기존 종목들을 전부 그 국가로 이전합니다.
+async function ensureDefaultStockCountry() {
+    if (!adminDatabase) return;
+
+    try {
+        const snap = await adminDatabase.ref('stock_countries').once('value');
+        const existing = snap.val();
+
+        let defaultCountryId;
+
+        if (!existing || Object.keys(existing).length === 0) {
+            const newRef = adminDatabase.ref('stock_countries').push();
+            defaultCountryId = newRef.key;
+            await newRef.set({ id: defaultCountryId, name: '대독일공화국', flag: '🏳️' });
+        } else {
+            defaultCountryId = Object.keys(existing)[0];
+        }
+
+        const stocksWithoutCountry = stocks.filter(s => !s.countryId);
+        for (const stock of stocksWithoutCountry) {
+            await adminDatabase.ref('stocks/' + stock.symbol + '/countryId').set(defaultCountryId);
+        }
+    } catch (error) {
+        console.error('기본 국가 설정 실패:', error);
+    }
 }
 
 async function initializeStocks() {
@@ -1377,6 +1591,7 @@ async function checkPriceUpdaterRole() {
 // 새로고침 시에도 자동으로 로그인 상태를 복원해줍니다.
 async function init() {
     subscribeToStocks();
+    subscribeToStockCountries();
 
     auth.onAuthStateChanged(async (user) => {
         if (user) {
@@ -1683,8 +1898,19 @@ function renderStockList() {
         container.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 20px;">주식 데이터 로딩 중...</div>';
         return;
     }
-    
-    container.innerHTML = stocks.map(stock => `
+
+    // 국가 탭이 선택되어 있으면 그 국가 종목만 보여줍니다.
+    // (아직 국가가 지정 안 된 종목은 국가 목록이 비어있을 때만 전체 표시)
+    const filteredStocks = selectedStockCountryId
+        ? stocks.filter(s => s.countryId === selectedStockCountryId)
+        : stocks;
+
+    if (filteredStocks.length === 0) {
+        container.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 20px;">이 국가에 등록된 종목이 없습니다</div>';
+        return;
+    }
+
+    container.innerHTML = filteredStocks.map(stock => `
         <div class="stock-item ${currentStock && stock.symbol === currentStock.symbol ? 'active' : ''}" 
              onclick='selectStock(${JSON.stringify(stock)})'>
             <div class="stock-symbol">${stock.symbol}</div>
@@ -2264,6 +2490,7 @@ async function toggleAdmin() {
         if (isAdminAuthenticated) {
             panel.style.display = 'block';
             renderAdminUserList();
+            ensureDefaultStockCountry();
             showToast('관리자 모드 활성화!', 'success');
             return;
         }
@@ -2280,6 +2507,7 @@ async function toggleAdmin() {
                 currentAdminUid = cred.user.uid;
                 panel.style.display = 'block';
                 renderAdminUserList();
+                ensureDefaultStockCountry();
                 showToast('관리자 모드 활성화!', 'success');
             } else {
                 // 인증은 됐지만 admins 목록에 없는 계정 → 관리자 권한 없음
@@ -2508,9 +2736,14 @@ async function addNewStock() {
     const name = document.getElementById('newStockName').value.trim();
     const price = parseInt(document.getElementById('newStockPrice').value) || 100000;
     const sector = document.getElementById('newStockSector').value;
+    const countryId = document.getElementById('newStockCountrySelect').value;
 
     if (!symbol || !name) {
         showToast('심볼과 기업명을 입력해주세요!', 'error');
+        return;
+    }
+    if (!countryId) {
+        showToast('국가를 먼저 추가하고 선택하세요!', 'error');
         return;
     }
 
@@ -2530,7 +2763,8 @@ async function addNewStock() {
             name: name,
             price: price,
             change: 0,
-            sector: sector
+            sector: sector,
+            countryId: countryId
         });
 
         showToast(`${name} (${symbol}) 추가 완료!`, 'success');
