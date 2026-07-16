@@ -1595,18 +1595,28 @@ function subscribeToLeaderboard() {
             // displayName이 없는 경우(아직 이전 안 된 예전 계정)는
             // 노드 키 자체가 그 사람의 아이디이므로 그대로 보여줍니다.
             const name = userData.displayName || uid;
-            let totalAssets = userData.cash ?? 10000000;
+
+            // 현금은 통화별로 나뉘어 있을 수 있으므로, 환율을 이용해 전부 DM 기준으로 환산합니다.
+            const cashObj = (userData.cash && typeof userData.cash === 'object')
+                ? userData.cash
+                : { DM: typeof userData.cash === 'number' ? userData.cash : 10000000 };
+
+            let totalAssetsInDM = 0;
+            Object.keys(cashObj).forEach(code => {
+                totalAssetsInDM += (cashObj[code] || 0) * getExchangeRate(code);
+            });
 
             if (userData.portfolio) {
                 for (const symbol in userData.portfolio) {
                     const stock = stocks.find(s => s.symbol === symbol);
                     if (stock) {
-                        totalAssets += userData.portfolio[symbol].quantity * stock.price;
+                        const stockCurrency = stock.currency || 'DM';
+                        totalAssetsInDM += userData.portfolio[symbol].quantity * stock.price * getExchangeRate(stockCurrency);
                     }
                 }
             }
 
-            const profit = totalAssets - 10000000;
+            const profit = totalAssetsInDM - 10000000;
             rankings.push({
                 name: name,
                 profit: profit,
@@ -1879,7 +1889,7 @@ async function init() {
 
 async function loadUserData() {
     if (!currentUserUid || !database) {
-        userCash = 10000000;
+        userCash = { DM: 10000000 };
         portfolio = {};
         return;
     }
@@ -1890,9 +1900,18 @@ async function loadUserData() {
         if (!userData) {
             userCash = { DM: 10000000 };
             portfolio = {};
-        } else {
-            userCash = (userData.cash && typeof userData.cash === 'object') ? userData.cash : { DM: 10000000 };
+        } else if (userData.cash && typeof userData.cash === 'object') {
+            // 이미 통화별 객체 형태
+            userCash = userData.cash;
             portfolio = userData.portfolio || {};
+        } else {
+            // 옛날 방식(숫자 하나)으로 남아있던 잔액 → 버리지 않고 DM으로 그대로 옮겨줍니다
+            const legacyAmount = typeof userData.cash === 'number' ? userData.cash : 10000000;
+            userCash = { DM: legacyAmount };
+            portfolio = userData.portfolio || {};
+
+            // DB에도 새 형태로 바로 저장해서, 다음부터는 이 변환이 다시 필요 없게 합니다
+            database.ref('users/' + currentUserUid + '/cash').set(userCash).catch(err => console.error('cash 형식 전환 실패:', err));
         }
 
         document.getElementById('currentUserId').textContent = currentUser;
