@@ -2648,7 +2648,7 @@ function startPriceSimulation() {
             const updates = {};
             
             for (const stock of currentStocks) {
-                const changePercent = (Math.random() * 11 - 5) / 100;
+                const changePercent = (Math.random() * 6 - 3) / 100;
                 const oldPrice = stock.price;
                 
                 let newPrice = stock.price * (1 + changePercent);
