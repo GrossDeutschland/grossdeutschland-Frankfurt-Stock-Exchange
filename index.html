@@ -938,6 +938,7 @@ header {
                 <div class="rank-badge">순위 #<span id="userRank">1</span></div>
                 <button class="transfer-btn" style="background: var(--accent-green); color: var(--bg-primary);" onclick="location.href='shop.html'">🛍️ 소비센터</button>
                 <button class="transfer-btn" onclick="openTransferModal()">계좌송금</button>
+                <button class="transfer-btn" style="background: var(--accent-blue);" onclick="openExchangeModal()">💱 환전</button>
                 <button class="transfer-btn" style="background: var(--accent-red);" onclick="deleteMyAccount()">계좌삭제</button>
                 <button class="transfer-btn" style="background: var(--accent-purple);" onclick="logout()">로그아웃</button>
             </div>
@@ -1037,7 +1038,7 @@ header {
             
             <div style="margin-bottom: 30px;">
                 <h3 style="color: var(--accent-green); margin-bottom: 15px; font-size: 1rem;">💱 통화 관리</h3>
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 15px;">
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 15px;">
                     <div class="input-group" style="margin-bottom: 0;">
                         <label class="input-label">통화 코드 (예: USD)</label>
                         <input type="text" class="input-field" id="newCurrencyCode" placeholder="USD" maxlength="6">
@@ -1045,6 +1046,10 @@ header {
                     <div class="input-group" style="margin-bottom: 0;">
                         <label class="input-label">통화 이름</label>
                         <input type="text" class="input-field" id="newCurrencyName" placeholder="예: 미국 달러">
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">환율 (1코드 = ? DM)</label>
+                        <input type="number" class="input-field" id="newCurrencyRate" placeholder="예: 1300" step="0.0001">
                     </div>
                 </div>
                 <button class="admin-btn" onclick="addCurrency()">+ 통화 추가</button>
@@ -1143,6 +1148,34 @@ header {
             <button class="execute-btn buy" onclick="executeTransfer()">송금하기</button>
         </div>
     </div>
+
+    <!-- Exchange Modal (환전) -->
+    <div class="modal" id="exchangeModal">
+        <div class="modal-content" style="position: relative;">
+            <button class="modal-close" onclick="closeExchangeModal()">×</button>
+            <div class="modal-header">💱 환전</div>
+
+            <div class="input-group">
+                <label class="input-label">보내는 통화</label>
+                <select class="input-field" id="exchangeFromCurrency" onchange="updateExchangePreview()"></select>
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">금액</label>
+                <input type="number" class="input-field" id="exchangeAmount" placeholder="금액 입력" min="1" oninput="updateExchangePreview()">
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">받는 통화</label>
+                <select class="input-field" id="exchangeToCurrency" onchange="updateExchangePreview()"></select>
+            </div>
+
+            <div class="trade-summary" id="exchangePreview" style="margin-bottom: 20px;"></div>
+
+            <button class="execute-btn buy" onclick="executeExchange()">환전하기</button>
+        </div>
+    </div>
+
 
     <!-- Toast Notification -->
     <div class="toast" id="toast"></div>
@@ -1673,11 +1706,25 @@ async function ensureDefaultCurrency() {
     try {
         const snap = await adminDatabase.ref('currencies').once('value');
         if (!snap.val() || Object.keys(snap.val()).length === 0) {
-            await adminDatabase.ref('currencies/DM').set({ code: 'DM', name: '도이치마르크', symbol: 'DM' });
+            await adminDatabase.ref('currencies/DM').set({ code: 'DM', name: '도이치마르크', symbol: 'DM', exchangeRate: 1 });
         }
     } catch (error) {
         console.error('기본 통화 설정 실패:', error);
     }
+}
+
+// 1 [code] = ? DM 인지 환율을 가져옵니다. DM 본인은 항상 1입니다.
+function getExchangeRate(code) {
+    if (code === 'DM') return 1;
+    const c = currencies[code];
+    return (c && typeof c.exchangeRate === 'number' && c.exchangeRate > 0) ? c.exchangeRate : 1;
+}
+
+// fromCode 통화의 amount를, toCode 통화 기준으로 환산합니다. (DM을 매개로 계산)
+function convertCurrency(amount, fromCode, toCode) {
+    if (fromCode === toCode) return amount;
+    const amountInDM = amount * getExchangeRate(fromCode);
+    return amountInDM / getExchangeRate(toCode);
 }
 
 function populateNewStockCurrencySelect() {
@@ -1694,6 +1741,7 @@ function populateNewStockCurrencySelect() {
 async function addCurrency() {
     const codeInput = document.getElementById('newCurrencyCode').value.trim().toUpperCase();
     const name = document.getElementById('newCurrencyName').value.trim();
+    const rate = parseFloat(document.getElementById('newCurrencyRate').value);
 
     if (!codeInput || !/^[A-Z]{2,6}$/.test(codeInput)) {
         showToast('통화 코드는 영문 2~6자로 입력하세요! (예: USD)', 'error');
@@ -1703,16 +1751,25 @@ async function addCurrency() {
         showToast('통화 이름을 입력하세요!', 'error');
         return;
     }
+    if (codeInput === 'DM') {
+        showToast('DM은 이미 기본 통화로 존재합니다!', 'error');
+        return;
+    }
+    if (!rate || rate <= 0) {
+        showToast('환율(1코드 = ? DM)을 올바르게 입력하세요!', 'error');
+        return;
+    }
     if (!adminDatabase) {
         showToast('관리자로 로그인이 필요합니다!', 'error');
         return;
     }
 
     try {
-        await adminDatabase.ref('currencies/' + codeInput).set({ code: codeInput, name: name, symbol: codeInput });
-        showToast(`${codeInput} 통화 추가 완료!`, 'success');
+        await adminDatabase.ref('currencies/' + codeInput).set({ code: codeInput, name: name, symbol: codeInput, exchangeRate: rate });
+        showToast(`${codeInput} 통화 추가 완료! (1 ${codeInput} = ${rate.toLocaleString()} DM)`, 'success');
         document.getElementById('newCurrencyCode').value = '';
         document.getElementById('newCurrencyName').value = '';
+        document.getElementById('newCurrencyRate').value = '';
     } catch (error) {
         console.error('통화 추가 실패:', error);
         showToast('통화 추가 중 오류가 발생했습니다!', 'error');
@@ -1731,13 +1788,42 @@ function renderAdminCurrencyList() {
 
     container.innerHTML = codes.map(code => {
         const c = currencies[code];
+        const rateText = code === 'DM' ? '기준 통화 (1 DM = 1 DM)' : `1 ${code} = ${getExchangeRate(code).toLocaleString()} DM`;
         return `
             <div class="stock-admin-item">
-                <div><strong>${c.code}</strong> - ${c.name}</div>
-                ${code !== 'DM' ? `<button class="delete-stock-btn" onclick="deleteCurrency('${code}')">삭제</button>` : '<span style="font-size:0.75rem;color:var(--text-secondary);">기본 통화</span>'}
+                <div>
+                    <strong>${c.code}</strong> - ${c.name}
+                    <div style="font-size:0.75rem;color:var(--text-secondary);">${rateText}</div>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    ${code !== 'DM' ? `<button class="admin-btn" style="padding:6px 12px;font-size:0.75rem;background:var(--accent-blue);" onclick="editCurrencyRate('${code}')">✏️ 환율수정</button>` : ''}
+                    ${code !== 'DM' ? `<button class="delete-stock-btn" onclick="deleteCurrency('${code}')">삭제</button>` : '<span style="font-size:0.75rem;color:var(--text-secondary);">기본 통화</span>'}
+                </div>
             </div>
         `;
     }).join('');
+}
+
+async function editCurrencyRate(code) {
+    const c = currencies[code];
+    if (!c) return;
+
+    const input = prompt(`1 ${code} = 몇 DM 인지 입력하세요:`, getExchangeRate(code));
+    if (input === null) return;
+
+    const rate = parseFloat(input);
+    if (!rate || rate <= 0) {
+        showToast('올바른 환율을 입력하세요!', 'error');
+        return;
+    }
+
+    try {
+        await adminDatabase.ref('currencies/' + code + '/exchangeRate').set(rate);
+        showToast(`${code} 환율이 1 ${code} = ${rate.toLocaleString()} DM 으로 변경되었습니다!`, 'success');
+    } catch (error) {
+        console.error('환율 수정 실패:', error);
+        showToast('환율 수정 중 오류가 발생했습니다!', 'error');
+    }
 }
 
 async function deleteCurrency(code) {
@@ -2529,6 +2615,93 @@ function openTransferModal() {
     const select = document.getElementById('transferCurrency');
     select.innerHTML = getCurrencyCodes().map(code => `<option value="${code}">${code}</option>`).join('');
     document.getElementById('transferModal').classList.add('active');
+}
+
+// ============================================
+// 💱 환전 (통화 간 환전, 환율 기준으로 자동 계산)
+// ============================================
+function openExchangeModal() {
+    const fromSelect = document.getElementById('exchangeFromCurrency');
+    const toSelect = document.getElementById('exchangeToCurrency');
+    const options = getCurrencyCodes().map(code => `<option value="${code}">${code}</option>`).join('');
+
+    fromSelect.innerHTML = options;
+    toSelect.innerHTML = options;
+    if (getCurrencyCodes().length > 1) toSelect.selectedIndex = 1;
+
+    document.getElementById('exchangeAmount').value = '';
+    updateExchangePreview();
+    document.getElementById('exchangeModal').classList.add('active');
+}
+
+function closeExchangeModal() {
+    document.getElementById('exchangeModal').classList.remove('active');
+}
+
+function updateExchangePreview() {
+    const fromCode = document.getElementById('exchangeFromCurrency').value;
+    const toCode = document.getElementById('exchangeToCurrency').value;
+    const amount = parseFloat(document.getElementById('exchangeAmount').value) || 0;
+
+    const preview = document.getElementById('exchangePreview');
+
+    if (!fromCode || !toCode) {
+        preview.innerHTML = '';
+        return;
+    }
+
+    const converted = convertCurrency(amount, fromCode, toCode);
+    const myBalance = userCash[fromCode] || 0;
+
+    preview.innerHTML = `
+        <div class="summary-row"><span>내 ${fromCode} 잔액:</span><span>${myBalance.toLocaleString()}</span></div>
+        <div class="summary-row"><span>환율:</span><span>1 ${fromCode} = ${convertCurrency(1, fromCode, toCode).toLocaleString(undefined, {maximumFractionDigits: 6})} ${toCode}</span></div>
+        <div class="summary-row"><span>받게 될 금액:</span><span>${toCode} ${Math.floor(converted).toLocaleString()}</span></div>
+    `;
+}
+
+async function executeExchange() {
+    const fromCode = document.getElementById('exchangeFromCurrency').value;
+    const toCode = document.getElementById('exchangeToCurrency').value;
+    const amount = parseFloat(document.getElementById('exchangeAmount').value);
+
+    if (!fromCode || !toCode || fromCode === toCode) {
+        showToast('서로 다른 통화를 선택하세요!', 'error');
+        return;
+    }
+    if (!amount || amount <= 0) {
+        showToast('올바른 금액을 입력하세요!', 'error');
+        return;
+    }
+    if (amount > (userCash[fromCode] || 0)) {
+        showToast(`${fromCode} 잔액이 부족합니다!`, 'error');
+        return;
+    }
+
+    const converted = Math.floor(convertCurrency(amount, fromCode, toCode));
+
+    try {
+        const fromRef = database.ref('users/' + currentUserUid + '/cash/' + fromCode);
+        const txResult = await fromRef.transaction((current) => {
+            const cur = current ?? 0;
+            if (cur < amount) return; // 취소
+            return cur - amount;
+        });
+
+        if (!txResult.committed) {
+            showToast(`${fromCode} 잔액이 부족합니다!`, 'error');
+            return;
+        }
+
+        const toRef = database.ref('users/' + currentUserUid + '/cash/' + toCode);
+        await toRef.transaction((current) => (current ?? 0) + converted);
+
+        closeExchangeModal();
+        showToast(`${fromCode} ${amount.toLocaleString()} → ${toCode} ${converted.toLocaleString()} 환전 완료!`, 'success');
+    } catch (error) {
+        console.error('환전 실패:', error);
+        showToast('환전 중 오류가 발생했습니다!', 'error');
+    }
 }
 
 function closeTransferModal() {
