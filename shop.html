@@ -287,6 +287,7 @@ textarea.input-field { resize: vertical; min-height: 70px; font-family: 'JetBrai
         </header>
 
         <button class="admin-toggle" onclick="toggleAdmin()">🔧 관리자 모드</button>
+        <button class="admin-toggle" style="right: 180px; background: var(--accent-green); color: var(--bg-primary);" onclick="openSellItemModal()">🛒 판매 등록</button>
 
         <div class="dashboard">
             <!-- Country List -->
@@ -368,8 +369,12 @@ textarea.input-field { resize: vertical; min-height: 70px; font-family: 'JetBrai
                         <input type="text" class="input-field" id="newItemName" placeholder="예: 스마트폰">
                     </div>
                     <div class="input-group" style="margin-bottom: 0;">
-                        <label class="input-label">가격 (DM)</label>
+                        <label class="input-label">가격</label>
                         <input type="number" class="input-field" id="newItemPrice" placeholder="50000" value="50000">
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">통화</label>
+                        <select class="input-field" id="newItemCurrency"></select>
                     </div>
                     <div class="input-group" style="margin-bottom: 0;">
                         <label class="input-label">설명 (선택)</label>
@@ -434,6 +439,57 @@ textarea.input-field { resize: vertical; min-height: 70px; font-family: 'JetBrai
         </div>
     </div>
 
+    <!-- Sell Item Modal (유저 판매 등록) -->
+    <div class="modal" id="sellItemModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('sellItemModal')">×</button>
+            <div class="modal-header">🛒 내 상품 판매 등록</div>
+
+            <div class="input-group">
+                <label class="input-label">국가 선택</label>
+                <select class="input-field" id="sellItemCountrySelect" onchange="onSellItemCountryChange()"></select>
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">테마 선택</label>
+                <select class="input-field" id="sellItemThemeSelect"></select>
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">상품명</label>
+                <input type="text" class="input-field" id="sellItemName" placeholder="예: 중고 자전거">
+            </div>
+
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px;">
+                <div class="input-group">
+                    <label class="input-label">가격</label>
+                    <input type="number" class="input-field" id="sellItemPrice" placeholder="10000" value="10000">
+                </div>
+                <div class="input-group">
+                    <label class="input-label">통화</label>
+                    <select class="input-field" id="sellItemCurrency"></select>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">수량 (판매할 재고)</label>
+                <input type="number" class="input-field" id="sellItemStock" placeholder="1" value="1" min="1">
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">설명 (선택)</label>
+                <input type="text" class="input-field" id="sellItemDesc" placeholder="간단한 설명">
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">이미지 URL (선택)</label>
+                <input type="text" class="input-field" id="sellItemImage" placeholder="https://...">
+            </div>
+
+            <button class="execute-btn" onclick="confirmSellItem()">판매 등록</button>
+        </div>
+    </div>
+
     <!-- Edit Item Modal (이름/가격/설명/이미지 수정) -->
     <div class="modal" id="editItemModal">
         <div class="modal-content">
@@ -459,6 +515,15 @@ textarea.input-field { resize: vertical; min-height: 70px; font-family: 'JetBrai
                 <label class="input-label">이미지 URL</label>
                 <input type="text" class="input-field" id="editItemImage" placeholder="https://..." oninput="updateEditImagePreview()">
                 <img id="editImagePreview" class="edit-preview-image" alt="미리보기" onerror="this.style.display='none'" onload="this.style.display='block'">
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">구매대금 정책 (유저가 등록한 상품에만 의미 있음)</label>
+                <select class="input-field" id="editItemMoneyPolicy">
+                    <option value="">상위 설정(테마/국가) 따름</option>
+                    <option value="payout">판매자에게 지급</option>
+                    <option value="vanish">⚠️ 구매대금 소멸</option>
+                </select>
             </div>
 
             <button class="execute-btn blue" onclick="confirmEditItem()">수정 완료</button>
@@ -597,11 +662,12 @@ if (adminAuth) {
 // ============================================
 let currentUser = null;    // 화면에 표시할 닉네임(아이디)
 let currentUserUid = null; // 실제 Firebase Auth uid
-let userCash = 10000000;
-let inventory = {};          // { itemId: {name, price, countryName, themeName, quantity} }
+let userCash = {};           // 통화별 잔액: { DM: 10000000, USD: 500, ... }
+let currencies = {};          // { code: {code, name, symbol} }
+let inventory = {};          // { itemId: {name, price, currency, countryName, themeName, quantity} }
 let countries = {};          // { countryId: {id, name, flag} }
 let themes = {};             // { themeId: {id, countryId, name} }
-let items = {};              // { itemId: {id, themeId, countryId, name, price, description, image} }
+let items = {};              // { itemId: {id, themeId, countryId, name, price, currency, sellerUid, stock, description, image} }
 let selectedCountryId = null;
 let pendingBuyItemId = null;
 let pendingGiftItemId = null;
@@ -612,6 +678,7 @@ let pendingEditItemId = null;
 // ============================================
 async function init() {
     subscribeToCatalog();
+    subscribeToCurrencies();
 
     auth.onAuthStateChanged(async (user) => {
         if (user) {
@@ -662,9 +729,43 @@ function subscribeToCatalog() {
     });
 }
 
+function subscribeToCurrencies() {
+    if (!database) return;
+
+    database.ref('currencies').on('value', (snapshot) => {
+        currencies = snapshot.val() || {};
+        populateCurrencySelects();
+        updateBalance();
+    });
+}
+
+function getCurrencyCodes() {
+    const codes = Object.keys(currencies);
+    return codes.length > 0 ? codes : ['DM'];
+}
+
+function formatMultiCurrency(balancesObj) {
+    const codes = getCurrencyCodes();
+    return codes.map(code => `${code} ${(balancesObj[code] || 0).toLocaleString()}`).join('  ·  ');
+}
+
+function populateCurrencySelects() {
+    const options = getCurrencyCodes().map(code =>
+        `<option value="${code}">${code}${currencies[code] ? ' - ' + currencies[code].name : ''}</option>`
+    ).join('');
+
+    ['newItemCurrency', 'sellItemCurrency'].forEach(id => {
+        const select = document.getElementById(id);
+        if (!select) return;
+        const prev = select.value;
+        select.innerHTML = options;
+        if (prev && getCurrencyCodes().includes(prev)) select.value = prev;
+    });
+}
+
 async function loadUserData() {
     if (!currentUserUid || !database) {
-        userCash = 10000000;
+        userCash = { DM: 10000000 };
         inventory = {};
         return;
     }
@@ -672,10 +773,10 @@ async function loadUserData() {
     database.ref('users/' + currentUserUid).on('value', (snapshot) => {
         const userData = snapshot.val();
         if (!userData) {
-            userCash = 10000000;
+            userCash = { DM: 10000000 };
             inventory = {};
         } else {
-            userCash = userData.cash !== undefined ? userData.cash : 10000000;
+            userCash = (userData.cash && typeof userData.cash === 'object') ? userData.cash : { DM: 10000000 };
             inventory = userData.inventory || {};
         }
         document.getElementById('currentUserId').textContent = currentUser;
@@ -683,8 +784,9 @@ async function loadUserData() {
         renderInventory();
     });
 
-    // 로그인 시, 나에게 온 선물이 있으면 자동으로 받습니다
+    // 로그인 시, 나에게 온 선물 / 판매대금이 있으면 자동으로 받습니다
     processIncomingGifts();
+    processIncomingTransfers();
 }
 
 // ============================================
@@ -946,15 +1048,26 @@ function renderItemCard(item) {
     const imageHtml = item.image
         ? `<img src="${item.image}" class="item-image" alt="${item.name}" onerror="this.style.display='none'">`
         : '';
+    const currency = item.currency || 'DM';
+    const isUserListing = !!item.sellerUid;
+    const soldOut = isUserListing && (item.stock ?? 0) <= 0;
+    const badge = isUserListing
+        ? `<span style="font-size:0.65rem; background:var(--accent-purple); color:white; padding:2px 6px; border-radius:4px;">유저판매</span>`
+        : '';
+    const stockText = isUserListing
+        ? `<div style="font-size:0.7rem; color:var(--text-secondary);">재고: ${(item.stock ?? 0).toLocaleString()}개</div>`
+        : '';
+
     return `
         <div class="item-card">
             ${imageHtml}
-            <div class="item-name">${item.name}</div>
+            <div class="item-name">${item.name} ${badge}</div>
             <div class="item-desc">${item.description || ''}</div>
-            <div class="item-price">DM ${item.price.toLocaleString()}</div>
+            <div class="item-price">${currency} ${item.price.toLocaleString()}</div>
+            ${stockText}
             <div class="item-buy-row">
-                <input type="number" class="item-qty" id="qty-${item.id}" value="1" min="1">
-                <button class="item-buy-btn" onclick="openBuyModal('${item.id}')">구매</button>
+                <input type="number" class="item-qty" id="qty-${item.id}" value="1" min="1" ${soldOut ? 'disabled' : ''}>
+                <button class="item-buy-btn" onclick="openBuyModal('${item.id}')" ${soldOut ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''}>${soldOut ? '품절' : '구매'}</button>
             </div>
         </div>
     `;
@@ -978,48 +1091,101 @@ function openBuyModal(itemId) {
 function updateBuySummary() {
     const item = items[pendingBuyItemId];
     if (!item) return;
+    const currency = item.currency || 'DM';
     const qty = Math.max(1, parseInt(document.getElementById('buyQuantity').value) || 1);
     const total = qty * item.price;
     document.getElementById('buySummary').innerHTML = `
         <div class="summary-row"><span>상품:</span><span>${item.name}</span></div>
-        <div class="summary-row"><span>단가:</span><span>DM ${item.price.toLocaleString()}</span></div>
-        <div class="summary-row"><span>총 금액:</span><span>DM ${total.toLocaleString()}</span></div>
+        <div class="summary-row"><span>단가:</span><span>${currency} ${item.price.toLocaleString()}</span></div>
+        <div class="summary-row"><span>총 금액:</span><span>${currency} ${total.toLocaleString()}</span></div>
     `;
+}
+
+// 상품/테마/국가 순으로 "구매대금 소멸 여부"를 판단합니다.
+// 개별 상품에 명시적으로 지정된 게 있으면 그걸 최우선으로, 없으면 테마 → 국가 순으로 따라갑니다.
+function resolveMoneyPolicy(item) {
+    if (item.moneyPolicy === 'vanish' || item.moneyPolicy === 'payout') return item.moneyPolicy;
+
+    const theme = themes[item.themeId];
+    if (theme && (theme.moneyPolicy === 'vanish' || theme.moneyPolicy === 'payout')) return theme.moneyPolicy;
+
+    const country = countries[item.countryId];
+    if (country && country.moneyPolicy === 'vanish') return 'vanish';
+
+    return 'payout';
 }
 
 async function confirmBuy() {
     const item = items[pendingBuyItemId];
     if (!item || !currentUser) return;
 
+    const currency = item.currency || 'DM';
     const qty = Math.max(1, parseInt(document.getElementById('buyQuantity').value) || 1);
     const total = qty * item.price;
 
-    if (total > userCash) { showToast('현금이 부족합니다!', 'error'); return; }
+    if (total > (userCash[currency] || 0)) {
+        showToast(`${currency} 현금이 부족합니다!`, 'error');
+        return;
+    }
+
+    const isUserListing = !!item.sellerUid;
+    const shouldPayoutSeller = isUserListing && resolveMoneyPolicy(item) !== 'vanish';
 
     try {
-        const snapshot = await database.ref('users/' + currentUserUid).once('value');
-        const userData = snapshot.val() || {};
-        const currentInventory = userData.inventory || {};
-        const existing = currentInventory[item.id];
+        // 유저가 등록한 상품이면, 재고를 먼저 확보합니다 (동시 구매 충돌 방지)
+        if (isUserListing) {
+            if (item.sellerUid === currentUserUid) {
+                showToast('본인이 등록한 상품은 구매할 수 없습니다!', 'error');
+                return;
+            }
 
+            const stockRef = database.ref('shop_items/' + item.id + '/stock');
+            const txResult = await stockRef.transaction((current) => {
+                const cur = current ?? 0;
+                if (cur < qty) return; // 취소 (재고 부족)
+                return cur - qty;
+            });
+
+            if (!txResult.committed) {
+                showToast('재고가 부족합니다!', 'error');
+                return;
+            }
+        }
+
+        // 내 현금 차감 (내 데이터라 내가 직접 써도 됨)
+        const cashRef = database.ref('users/' + currentUserUid + '/cash/' + currency);
+        await cashRef.transaction((current) => (current ?? 0) - total);
+
+        // 내 보관함에 추가
         const country = countries[item.countryId] || {};
         const theme = themes[item.themeId] || {};
 
-        currentInventory[item.id] = {
+        const invRef = database.ref('users/' + currentUserUid + '/inventory/' + item.id);
+        await invRef.transaction((current) => ({
             name: item.name,
             price: item.price,
+            currency: currency,
             countryName: country.name || '',
             themeName: theme.name || '',
-            quantity: (existing ? existing.quantity : 0) + qty
-        };
+            quantity: (current ? current.quantity : 0) + qty
+        }));
 
-        const newCash = (userData.cash !== undefined ? userData.cash : 10000000) - total;
+        await database.ref('users/' + currentUserUid + '/lastUpdate').set(new Date().toISOString());
 
-        await database.ref('users/' + currentUserUid).update({
-            cash: newCash,
-            inventory: currentInventory,
-            lastUpdate: new Date().toISOString()
-        });
+        if (shouldPayoutSeller) {
+            // 유저가 등록한 상품이고, 대금 소멸 정책이 아니면 판매자에게 대금 전달
+            // (내가 남의 잔액에 직접 못 쓰므로, 판매자가 로그인하면 자동으로 받아갑니다)
+            const transferRef = database.ref('transfers').push();
+            await transferRef.set({
+                from: currentUserUid,
+                to: item.sellerUid,
+                amount: total,
+                currency: currency,
+                status: 'pending',
+                createdAt: new Date().toISOString()
+            });
+        }
+        // 그 외의 경우(관리자 상품, 또는 소멸 정책 적용된 상품)는 대금이 그대로 소멸됩니다
 
         closeModal('buyModal');
         showToast(`${item.name} ${qty}개 구매 완료!`, 'success');
@@ -1043,17 +1209,56 @@ function renderInventory() {
 
     container.innerHTML = itemIds.map(itemId => {
         const holding = inventory[itemId];
+        const currency = holding.currency || 'DM';
         return `
             <div class="inventory-item">
                 <div class="inventory-header">
                     <span class="inventory-name">${holding.name}</span>
                     <span class="inventory-qty">${holding.quantity}개</span>
                 </div>
-                <div class="inventory-meta">${holding.countryName} · ${holding.themeName} · 개당 DM ${holding.price.toLocaleString()}</div>
-                <button class="gift-btn" onclick="openGiftModal('${itemId}')">🎁 선물하기</button>
+                <div class="inventory-meta">${holding.countryName} · ${holding.themeName} · 개당 ${currency} ${holding.price.toLocaleString()}</div>
+                <div style="display:flex; gap:6px;">
+                    <button class="gift-btn" onclick="openGiftModal('${itemId}')" style="flex:1;">🎁 선물하기</button>
+                    <button class="gift-btn" onclick="consumeInventoryItem('${itemId}')" style="flex:1; background:var(--accent-red);">🗑️ 소비하기</button>
+                </div>
             </div>
         `;
     }).join('');
+}
+
+// 물품을 그냥 버립니다 (소비/폐기) - 돈은 발생하지 않습니다.
+async function consumeInventoryItem(itemId) {
+    const holding = inventory[itemId];
+    if (!holding) return;
+
+    const input = prompt(`"${holding.name}"을(를) 몇 개 소비(폐기)하시겠습니까?\n(보유: ${holding.quantity}개)`, holding.quantity);
+    if (input === null) return;
+
+    const qty = parseInt(input);
+    if (isNaN(qty) || qty <= 0) {
+        showToast('올바른 수량을 입력하세요!', 'error');
+        return;
+    }
+    if (qty > holding.quantity) {
+        showToast('보유 수량보다 많이 소비할 수 없습니다!', 'error');
+        return;
+    }
+
+    try {
+        const invRef = database.ref('users/' + currentUserUid + '/inventory/' + itemId);
+        const newQty = holding.quantity - qty;
+
+        if (newQty <= 0) {
+            await invRef.remove();
+        } else {
+            await invRef.update({ quantity: newQty });
+        }
+
+        showToast(`${holding.name} ${qty}개를 소비했습니다.`, 'success');
+    } catch (error) {
+        console.error('소비 실패:', error);
+        showToast('소비 처리 중 오류가 발생했습니다!', 'error');
+    }
 }
 
 function openGiftModal(itemId) {
@@ -1112,6 +1317,7 @@ async function confirmGift() {
             itemId: itemId,
             name: holding.name,
             price: holding.price,
+            currency: holding.currency || 'DM',
             countryName: holding.countryName,
             themeName: holding.themeName,
             quantity: qty,
@@ -1125,6 +1331,32 @@ async function confirmGift() {
         console.error('선물 실패:', error);
         showToast('선물 중 오류가 발생했습니다!', 'error');
     }
+}
+
+// 로그인 시(또는 로그인 중) 나에게 온 송금/판매대금 요청서를 자동으로 처리
+function processIncomingTransfers() {
+    if (!database || !currentUserUid) return;
+
+    database.ref('transfers')
+        .orderByChild('to')
+        .equalTo(currentUserUid)
+        .on('child_added', async (snapshot) => {
+            const transfer = snapshot.val();
+            if (!transfer || transfer.status !== 'pending') return;
+
+            const currency = transfer.currency || 'DM';
+
+            try {
+                const cashRef = database.ref('users/' + currentUserUid + '/cash/' + currency);
+                await cashRef.transaction((current) => (current ?? 0) + transfer.amount);
+
+                await database.ref('transfers/' + snapshot.key + '/status').set('completed');
+
+                showToast(`${currency} ${transfer.amount.toLocaleString()} 을(를) 받았습니다!`, 'success');
+            } catch (error) {
+                console.error('송금 수신 처리 실패:', error);
+            }
+        });
 }
 
 // 로그인 시 나에게 온 선물 요청서를 자동으로 처리
@@ -1143,6 +1375,7 @@ function processIncomingGifts() {
                 await invRef.transaction((current) => ({
                     name: gift.name,
                     price: gift.price,
+                    currency: gift.currency || 'DM',
                     countryName: gift.countryName,
                     themeName: gift.themeName,
                     quantity: (current ? current.quantity : 0) + gift.quantity
@@ -1162,7 +1395,7 @@ function closeModal(id) {
 }
 
 function updateBalance() {
-    document.getElementById('cashBalance').textContent = `DM ${userCash.toLocaleString()}`;
+    document.getElementById('cashBalance').textContent = formatMultiCurrency(userCash);
 }
 
 function showToast(message, type = 'success') {
@@ -1175,8 +1408,74 @@ function showToast(message, type = 'success') {
 }
 
 // ============================================
-// 관리자: 패널 토글 / 탭
+// 🛒 유저 판매 등록 (직거래 마켓)
+// 관리자가 만든 상품과 달리, 이 상품이 팔리면 대금이 등록한 유저에게 전달됩니다.
 // ============================================
+function openSellItemModal() {
+    if (!currentUser) { showToast('로그인이 필요합니다!', 'error'); return; }
+
+    const countryOptions = Object.keys(countries).map(id =>
+        `<option value="${id}">${countries[id].flag || '🏳️'} ${countries[id].name}</option>`
+    ).join('');
+    document.getElementById('sellItemCountrySelect').innerHTML = countryOptions || '<option value="">등록된 국가가 없습니다</option>';
+
+    populateCurrencySelects();
+    onSellItemCountryChange();
+
+    document.getElementById('sellItemName').value = '';
+    document.getElementById('sellItemPrice').value = '10000';
+    document.getElementById('sellItemStock').value = '1';
+    document.getElementById('sellItemDesc').value = '';
+    document.getElementById('sellItemImage').value = '';
+
+    document.getElementById('sellItemModal').classList.add('active');
+}
+
+function onSellItemCountryChange() {
+    const countryId = document.getElementById('sellItemCountrySelect').value;
+    const themeSelect = document.getElementById('sellItemThemeSelect');
+    const countryThemes = Object.values(themes).filter(t => t.countryId === countryId);
+
+    themeSelect.innerHTML = countryThemes.length > 0
+        ? countryThemes.map(t => `<option value="${t.id}">${t.name}</option>`).join('')
+        : '<option value="">이 국가에 테마가 없습니다</option>';
+}
+
+async function confirmSellItem() {
+    const countryId = document.getElementById('sellItemCountrySelect').value;
+    const themeId = document.getElementById('sellItemThemeSelect').value;
+    const name = document.getElementById('sellItemName').value.trim();
+    const price = parseInt(document.getElementById('sellItemPrice').value) || 0;
+    const currency = document.getElementById('sellItemCurrency').value || 'DM';
+    const stock = parseInt(document.getElementById('sellItemStock').value) || 0;
+    const description = document.getElementById('sellItemDesc').value.trim();
+    const image = document.getElementById('sellItemImage').value.trim();
+
+    if (!countryId || !themeId) { showToast('국가와 테마를 선택하세요!', 'error'); return; }
+    if (!name) { showToast('상품명을 입력하세요!', 'error'); return; }
+    if (price <= 0) { showToast('올바른 가격을 입력하세요!', 'error'); return; }
+    if (stock <= 0) { showToast('올바른 수량을 입력하세요!', 'error'); return; }
+
+    try {
+        const newRef = database.ref('shop_items').push();
+        await newRef.set({
+            id: newRef.key,
+            countryId, themeId, name, price, currency, stock,
+            description: description || '',
+            image: image || '',
+            sellerUid: currentUserUid,
+            createdAt: new Date().toISOString()
+        });
+
+        showToast(`${name} 판매 등록 완료! (재고 ${stock}개)`, 'success');
+        closeModal('sellItemModal');
+    } catch (error) {
+        console.error('판매 등록 실패:', error);
+        showToast('판매 등록 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+
 async function readAdminFlagWithRetry(uid, attempts = 3, delayMs = 400) {
     for (let i = 0; i < attempts; i++) {
         try {
@@ -1281,13 +1580,37 @@ function renderAdminCountryList() {
 
     container.innerHTML = countryIds.map(id => {
         const c = countries[id];
+        const vanish = c.moneyPolicy === 'vanish';
         return `
             <div class="admin-list-item">
-                <div>${c.flag || '🏳️'} <strong>${c.name}</strong></div>
-                <button class="delete-btn" onclick="deleteCountry('${id}')">삭제</button>
+                <div>
+                    ${c.flag || '🏳️'} <strong>${c.name}</strong>
+                    <div style="font-size:0.7rem;color:${vanish ? 'var(--accent-red)' : 'var(--text-secondary)'};">
+                        ${vanish ? '⚠️ 이 국가 판매대금은 소멸됩니다' : '판매자에게 대금 지급'}
+                    </div>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <button class="admin-btn" style="padding:6px 12px;font-size:0.75rem;background:${vanish ? 'var(--accent-green)' : 'var(--accent-red)'};"
+                            onclick="toggleCountryMoneyPolicy('${id}')">${vanish ? '지급으로 변경' : '소멸로 변경'}</button>
+                    <button class="delete-btn" onclick="deleteCountry('${id}')">삭제</button>
+                </div>
             </div>
         `;
     }).join('');
+}
+
+async function toggleCountryMoneyPolicy(countryId) {
+    const c = countries[countryId];
+    if (!c) return;
+    const newPolicy = c.moneyPolicy === 'vanish' ? 'payout' : 'vanish';
+
+    try {
+        await adminDatabase.ref('shop_countries/' + countryId + '/moneyPolicy').set(newPolicy);
+        showToast(`${c.name}의 판매대금 정책이 "${newPolicy === 'vanish' ? '소멸' : '지급'}"(으)로 변경되었습니다!`, 'success');
+    } catch (error) {
+        console.error('정책 변경 실패:', error);
+        showToast('정책 변경 중 오류가 발생했습니다!', 'error');
+    }
 }
 
 async function deleteCountry(countryId) {
@@ -1367,12 +1690,45 @@ function renderAdminThemeList() {
         return;
     }
 
-    container.innerHTML = countryThemes.map(t => `
+    container.innerHTML = countryThemes.map(t => {
+        const policyLabel = t.moneyPolicy === 'vanish' ? '⚠️ 소멸 (테마 지정)'
+            : t.moneyPolicy === 'payout' ? '지급 (테마 지정)'
+            : '국가 설정 따름';
+        const nextLabel = t.moneyPolicy === 'vanish' ? '지급으로' : t.moneyPolicy === 'payout' ? '국가설정 따름으로' : '소멸로';
+
+        return `
         <div class="admin-list-item">
-            <div><strong>${t.name}</strong></div>
-            <button class="delete-btn" onclick="deleteTheme('${t.id}')">삭제</button>
+            <div>
+                <strong>${t.name}</strong>
+                <div style="font-size:0.7rem;color:${t.moneyPolicy === 'vanish' ? 'var(--accent-red)' : 'var(--text-secondary)'};">${policyLabel}</div>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button class="admin-btn" style="padding:6px 12px;font-size:0.75rem;background:var(--accent-blue);"
+                        onclick="cycleThemeMoneyPolicy('${t.id}')">${nextLabel} 변경</button>
+                <button class="delete-btn" onclick="deleteTheme('${t.id}')">삭제</button>
+            </div>
         </div>
-    `).join('');
+        `;
+    }).join('');
+}
+
+async function cycleThemeMoneyPolicy(themeId) {
+    const t = themes[themeId];
+    if (!t) return;
+    // 순환: (지정 안 함, 국가설정 따름) → vanish → payout → 다시 지정 안 함
+    const next = t.moneyPolicy === 'vanish' ? 'payout' : (t.moneyPolicy === 'payout' ? null : 'vanish');
+
+    try {
+        if (next === null) {
+            await adminDatabase.ref('shop_themes/' + themeId + '/moneyPolicy').remove();
+        } else {
+            await adminDatabase.ref('shop_themes/' + themeId + '/moneyPolicy').set(next);
+        }
+        showToast(`${t.name}의 판매대금 정책이 변경되었습니다!`, 'success');
+    } catch (error) {
+        console.error('정책 변경 실패:', error);
+        showToast('정책 변경 중 오류가 발생했습니다!', 'error');
+    }
 }
 
 async function deleteTheme(themeId) {
@@ -1415,6 +1771,7 @@ async function addItem() {
     const themeId = document.getElementById('itemThemeSelect').value;
     const name = document.getElementById('newItemName').value.trim();
     const price = parseInt(document.getElementById('newItemPrice').value) || 0;
+    const currency = document.getElementById('newItemCurrency').value || 'DM';
     const description = document.getElementById('newItemDesc').value.trim();
     const image = document.getElementById('newItemImage').value.trim();
 
@@ -1425,7 +1782,7 @@ async function addItem() {
     try {
         const newRef = adminDatabase.ref('shop_items').push();
         await newRef.set({
-            id: newRef.key, countryId, themeId, name, price,
+            id: newRef.key, countryId, themeId, name, price, currency,
             description: description || '', image: image || ''
         });
         showToast(`${name} 상품 추가 완료!`, 'success');
@@ -1454,13 +1811,18 @@ function renderAdminItemList() {
         const thumb = item.image
             ? `<img src="${item.image}" class="admin-item-thumb" alt="${item.name}" onerror="this.style.visibility='hidden'">`
             : `<div class="admin-item-thumb" style="display:flex;align-items:center;justify-content:center;font-size:0.7rem;color:var(--text-secondary);">📦</div>`;
+        const sellerBadge = item.sellerUid ? '<span style="color:var(--accent-purple);">[유저판매]</span>' : '<span style="color:var(--text-secondary);">[관리자]</span>';
+        const policyText = item.moneyPolicy === 'vanish' ? '⚠️소멸(개별지정)'
+            : item.moneyPolicy === 'payout' ? '지급(개별지정)'
+            : '상위설정 따름';
         return `
         <div class="admin-list-item">
             <div class="admin-list-item-main">
                 ${thumb}
                 <div>
-                    <div><strong>${item.name}</strong></div>
-                    <div style="font-size:0.8rem;color:var(--text-secondary);">DM ${item.price.toLocaleString()}${item.description ? ' · ' + item.description : ''}</div>
+                    <div><strong>${item.name}</strong> ${sellerBadge}</div>
+                    <div style="font-size:0.8rem;color:var(--text-secondary);">${item.currency || 'DM'} ${item.price.toLocaleString()}${item.description ? ' · ' + item.description : ''}</div>
+                    <div style="font-size:0.7rem;color:var(--text-secondary);">대금정책: ${policyText}</div>
                 </div>
             </div>
             <div style="display:flex;gap:8px;">
@@ -1473,7 +1835,7 @@ function renderAdminItemList() {
     }).join('');
 }
 
-// --- 상품 정보(이름/가격/설명/이미지) 수정 모달 ---
+// --- 상품 정보(이름/가격/설명/이미지/대금정책) 수정 모달 ---
 function openEditItemModal(itemId) {
     const item = items[itemId];
     if (!item) { showToast('상품 정보를 찾을 수 없습니다!', 'error'); return; }
@@ -1483,6 +1845,7 @@ function openEditItemModal(itemId) {
     document.getElementById('editItemPrice').value = item.price || 0;
     document.getElementById('editItemDesc').value = item.description || '';
     document.getElementById('editItemImage').value = item.image || '';
+    document.getElementById('editItemMoneyPolicy').value = item.moneyPolicy || '';
 
     updateEditImagePreview();
     document.getElementById('editItemModal').classList.add('active');
@@ -1509,6 +1872,7 @@ async function confirmEditItem() {
     const price = parseInt(document.getElementById('editItemPrice').value);
     const description = document.getElementById('editItemDesc').value.trim();
     const image = document.getElementById('editItemImage').value.trim();
+    const moneyPolicy = document.getElementById('editItemMoneyPolicy').value;
 
     if (!name) { showToast('상품명을 입력하세요!', 'error'); return; }
     if (isNaN(price) || price <= 0) { showToast('올바른 가격을 입력하세요!', 'error'); return; }
@@ -1520,6 +1884,12 @@ async function confirmEditItem() {
             description: description || '',
             image: image || ''
         });
+
+        if (moneyPolicy) {
+            await adminDatabase.ref(`shop_items/${itemId}/moneyPolicy`).set(moneyPolicy);
+        } else {
+            await adminDatabase.ref(`shop_items/${itemId}/moneyPolicy`).remove();
+        }
 
         showToast(`${name} 상품 정보가 수정되었습니다!`, 'success');
         closeModal('editItemModal');
@@ -1572,7 +1942,7 @@ async function adminCreateUser() {
 
         await adminDatabase.ref('users/' + uid).set({
             displayName: userId,
-            cash: 10000000,
+            cash: { DM: 10000000 },
             portfolio: {},
             inventory: {},
             createdAt: new Date().toISOString()
@@ -1612,14 +1982,15 @@ async function renderAdminUserList() {
         container.innerHTML = Object.keys(usersData).map(uid => {
             const userData = usersData[uid];
             const name = userData.displayName || uid;
-            const cash = userData.cash !== undefined ? userData.cash : 10000000;
+            const cashObj = (userData.cash && typeof userData.cash === 'object') ? userData.cash : { DM: userData.cash ?? 10000000 };
+            const cashText = getCurrencyCodes().map(code => `${code} ${(cashObj[code] || 0).toLocaleString()}`).join(' · ');
             const itemCount = userData.inventory ? Object.keys(userData.inventory).length : 0;
 
             return `
                 <div class="admin-list-item">
                     <div>
                         <div><strong>${name}</strong></div>
-                        <div style="font-size:0.8rem;color:var(--text-secondary);">현금: DM ${cash.toLocaleString()} · 보관함 ${itemCount}종</div>
+                        <div style="font-size:0.8rem;color:var(--text-secondary);">현금: ${cashText} · 보관함 ${itemCount}종</div>
                     </div>
                     <div style="display:flex;gap:8px;">
                         <button class="admin-btn" style="padding:6px 12px;font-size:0.75rem;background:var(--accent-gold);color:var(--bg-primary);"
@@ -1775,6 +2146,7 @@ async function adminAddInventoryItem() {
         await adminDatabase.ref(`users/${adminInventoryTargetUser}/inventory/${itemId}`).set({
             name: item.name,
             price: item.price,
+            currency: item.currency || 'DM',
             countryName: country.name || '',
             themeName: theme.name || '',
             quantity: (existing ? existing.quantity : 0) + qty
