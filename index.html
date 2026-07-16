@@ -124,6 +124,39 @@ header {
     text-shadow: 0 0 20px var(--glow-green);
 }
 
+.balance-primary {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--accent-green);
+    text-shadow: 0 0 20px var(--glow-green);
+    white-space: nowrap;
+}
+
+.currency-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    justify-content: flex-end;
+    margin-top: 4px;
+    max-width: 220px;
+}
+
+.currency-chip {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.currency-chip.negative {
+    color: var(--accent-red);
+    border-color: var(--accent-red);
+}
+
 .rank-badge {
     background: linear-gradient(135deg, var(--accent-purple), var(--accent-blue));
     padding: 8px 16px;
@@ -854,6 +887,15 @@ header {
         font-size: 1.1rem;
     }
 
+    .balance-primary {
+        font-size: 1.1rem;
+    }
+
+    .currency-chip-list {
+        justify-content: flex-start;
+        max-width: none;
+    }
+
     .rank-badge {
         font-size: 0.75rem;
         padding: 6px 12px;
@@ -929,11 +971,11 @@ header {
                 </div>
                 <div class="balance">
                     <div class="balance-label">총 자산</div>
-                    <div class="balance-amount" id="totalBalance">DM 10,000,000</div>
+                    <div id="totalBalance"><div class="balance-primary">DM 10,000,000</div></div>
                 </div>
                 <div class="balance">
                     <div class="balance-label">현금</div>
-                    <div class="balance-amount" id="cashBalance">DM 10,000,000</div>
+                    <div id="cashBalance"><div class="balance-primary">DM 10,000,000</div></div>
                 </div>
                 <div class="rank-badge">순위 #<span id="userRank">1</span></div>
                 <button class="transfer-btn" style="background: var(--accent-green); color: var(--bg-primary);" onclick="location.href='shop.html'">🛍️ 소비센터</button>
@@ -1711,6 +1753,26 @@ function formatMultiCurrency(balancesObj) {
     return codes.map(code => `${code} ${(balancesObj[code] || 0).toLocaleString()}`).join('  ·  ');
 }
 
+// 주 통화(DM 등 첫 번째 통화)는 크게, 나머지는 작은 칩으로 보여주는 HTML을 만듭니다.
+function renderCurrencyBlock(balancesObj) {
+    const codes = getCurrencyCodes();
+    if (codes.length === 0) return '';
+
+    const primary = codes[0];
+    const primaryAmount = balancesObj[primary] || 0;
+    let html = `<div class="balance-primary">${primary} ${primaryAmount.toLocaleString()}</div>`;
+
+    const others = codes.slice(1);
+    if (others.length > 0) {
+        html += `<div class="currency-chip-list">` + others.map(code => {
+            const amount = balancesObj[code] || 0;
+            return `<span class="currency-chip${amount < 0 ? ' negative' : ''}">${code} ${amount.toLocaleString()}</span>`;
+        }).join('') + `</div>`;
+    }
+
+    return html;
+}
+
 async function ensureDefaultCurrency() {
     if (!adminDatabase) return;
     try {
@@ -2467,7 +2529,7 @@ function executeTrade() {
 }
 
 function updateBalance() {
-    document.getElementById('cashBalance').textContent = formatMultiCurrency(userCash);
+    document.getElementById('cashBalance').innerHTML = renderCurrencyBlock(userCash);
 
     const totalByCurrency = { ...userCash };
     Object.keys(portfolio).forEach(symbol => {
@@ -2478,7 +2540,7 @@ function updateBalance() {
         }
     });
 
-    document.getElementById('totalBalance').textContent = formatMultiCurrency(totalByCurrency);
+    document.getElementById('totalBalance').innerHTML = renderCurrencyBlock(totalByCurrency);
 }
 
 function updatePortfolio() {
