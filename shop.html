@@ -775,9 +775,14 @@ async function loadUserData() {
         if (!userData) {
             userCash = { DM: 10000000 };
             inventory = {};
-        } else {
-            userCash = (userData.cash && typeof userData.cash === 'object') ? userData.cash : { DM: 10000000 };
+        } else if (userData.cash && typeof userData.cash === 'object') {
+            userCash = userData.cash;
             inventory = userData.inventory || {};
+        } else {
+            const legacyAmount = typeof userData.cash === 'number' ? userData.cash : 10000000;
+            userCash = { DM: legacyAmount };
+            inventory = userData.inventory || {};
+            database.ref('users/' + currentUserUid + '/cash').set(userCash).catch(err => console.error('cash 형식 전환 실패:', err));
         }
         document.getElementById('currentUserId').textContent = currentUser;
         updateBalance();
