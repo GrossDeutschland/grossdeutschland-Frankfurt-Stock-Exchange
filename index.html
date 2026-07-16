@@ -1036,6 +1036,22 @@ header {
             </div>
             
             <div style="margin-bottom: 30px;">
+                <h3 style="color: var(--accent-green); margin-bottom: 15px; font-size: 1rem;">💱 통화 관리</h3>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 15px;">
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">통화 코드 (예: USD)</label>
+                        <input type="text" class="input-field" id="newCurrencyCode" placeholder="USD" maxlength="6">
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">통화 이름</label>
+                        <input type="text" class="input-field" id="newCurrencyName" placeholder="예: 미국 달러">
+                    </div>
+                </div>
+                <button class="admin-btn" onclick="addCurrency()">+ 통화 추가</button>
+                <div style="margin-top: 15px;" id="adminCurrencyList"></div>
+            </div>
+
+            <div style="margin-bottom: 30px;">
                 <h3 style="color: var(--accent-blue); margin-bottom: 15px; font-size: 1rem;">🌍 종목 국가 관리</h3>
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 15px;">
                     <div class="input-group" style="margin-bottom: 0;">
@@ -1083,6 +1099,10 @@ header {
                         <label class="input-label">국가</label>
                         <select class="input-field" id="newStockCountrySelect"></select>
                     </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">통화</label>
+                        <select class="input-field" id="newStockCurrencySelect"></select>
+                    </div>
                 </div>
                 <button class="admin-btn" onclick="addNewStock()">+ 기업 추가</button>
             </div>
@@ -1111,8 +1131,13 @@ header {
             </div>
 
             <div class="input-group">
+                <label class="input-label">통화</label>
+                <select class="input-field" id="transferCurrency"></select>
+            </div>
+
+            <div class="input-group">
                 <label class="input-label">송금 금액</label>
-                <input type="number" class="input-field" id="transferAmount" placeholder="금액 입력" min="1000">
+                <input type="number" class="input-field" id="transferAmount" placeholder="금액 입력" min="1">
             </div>
 
             <button class="execute-btn buy" onclick="executeTransfer()">송금하기</button>
@@ -1265,8 +1290,9 @@ const INITIAL_STOCKS = [
 let currentStock = null;
 let stockCountries = {};       // { countryId: {id, name, flag} }
 let selectedStockCountryId = null;
+let currencies = {};           // { code: {code, name, symbol} }
 let tradeMode = 'buy';
-let userCash = 10000000;
+let userCash = {};             // 통화별 잔액: { DM: 10000000, USD: 500, ... }
 let portfolio = {};
 let chartInstance = null;
 let leaderboard = [];
@@ -1619,14 +1645,126 @@ async function checkPriceUpdaterRole() {
 }
 
 // ============================================
-// 초기화 함수
+// 💱 통화 관리
 // ============================================
+function subscribeToCurrencies() {
+    if (!database) return;
+
+    database.ref('currencies').on('value', (snapshot) => {
+        currencies = snapshot.val() || {};
+        populateNewStockCurrencySelect();
+        renderAdminCurrencyList();
+        updateBalance();
+    });
+}
+
+function getCurrencyCodes() {
+    const codes = Object.keys(currencies);
+    return codes.length > 0 ? codes : ['DM'];
+}
+
+function formatMultiCurrency(balancesObj) {
+    const codes = getCurrencyCodes();
+    return codes.map(code => `${code} ${(balancesObj[code] || 0).toLocaleString()}`).join('  ·  ');
+}
+
+async function ensureDefaultCurrency() {
+    if (!adminDatabase) return;
+    try {
+        const snap = await adminDatabase.ref('currencies').once('value');
+        if (!snap.val() || Object.keys(snap.val()).length === 0) {
+            await adminDatabase.ref('currencies/DM').set({ code: 'DM', name: '도이치마르크', symbol: 'DM' });
+        }
+    } catch (error) {
+        console.error('기본 통화 설정 실패:', error);
+    }
+}
+
+function populateNewStockCurrencySelect() {
+    const select = document.getElementById('newStockCurrencySelect');
+    if (!select) return;
+    const options = getCurrencyCodes().map(code =>
+        `<option value="${code}">${code}${currencies[code] ? ' - ' + currencies[code].name : ''}</option>`
+    ).join('');
+    const prev = select.value;
+    select.innerHTML = options;
+    if (prev && getCurrencyCodes().includes(prev)) select.value = prev;
+}
+
+async function addCurrency() {
+    const codeInput = document.getElementById('newCurrencyCode').value.trim().toUpperCase();
+    const name = document.getElementById('newCurrencyName').value.trim();
+
+    if (!codeInput || !/^[A-Z]{2,6}$/.test(codeInput)) {
+        showToast('통화 코드는 영문 2~6자로 입력하세요! (예: USD)', 'error');
+        return;
+    }
+    if (!name) {
+        showToast('통화 이름을 입력하세요!', 'error');
+        return;
+    }
+    if (!adminDatabase) {
+        showToast('관리자로 로그인이 필요합니다!', 'error');
+        return;
+    }
+
+    try {
+        await adminDatabase.ref('currencies/' + codeInput).set({ code: codeInput, name: name, symbol: codeInput });
+        showToast(`${codeInput} 통화 추가 완료!`, 'success');
+        document.getElementById('newCurrencyCode').value = '';
+        document.getElementById('newCurrencyName').value = '';
+    } catch (error) {
+        console.error('통화 추가 실패:', error);
+        showToast('통화 추가 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+function renderAdminCurrencyList() {
+    const container = document.getElementById('adminCurrencyList');
+    if (!container) return;
+
+    const codes = Object.keys(currencies);
+    if (codes.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:12px;">등록된 통화가 없습니다</div>';
+        return;
+    }
+
+    container.innerHTML = codes.map(code => {
+        const c = currencies[code];
+        return `
+            <div class="stock-admin-item">
+                <div><strong>${c.code}</strong> - ${c.name}</div>
+                ${code !== 'DM' ? `<button class="delete-stock-btn" onclick="deleteCurrency('${code}')">삭제</button>` : '<span style="font-size:0.75rem;color:var(--text-secondary);">기본 통화</span>'}
+            </div>
+        `;
+    }).join('');
+}
+
+async function deleteCurrency(code) {
+    if (code === 'DM') {
+        showToast('기본 통화(DM)는 삭제할 수 없습니다!', 'error');
+        return;
+    }
+    if (!confirm(`정말로 ${code} 통화를 삭제하시겠습니까?\n\n(이미 이 통화로 거래된 종목/잔액은 그대로 남아있지만, 새로 선택은 못 하게 됩니다)`)) return;
+    if (!adminDatabase) return;
+
+    try {
+        await adminDatabase.ref('currencies/' + code).remove();
+        showToast(`${code} 삭제 완료!`, 'success');
+    } catch (error) {
+        console.error('통화 삭제 실패:', error);
+        showToast('통화 삭제 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+
 // Firebase Auth가 세션을 자동으로 기억하기 때문에, localStorage로 직접
 // 로그인 상태를 관리할 필요가 없습니다. auth.onAuthStateChanged가
 // 새로고침 시에도 자동으로 로그인 상태를 복원해줍니다.
 async function init() {
     subscribeToStocks();
     subscribeToStockCountries();
+    subscribeToCurrencies();
 
     auth.onAuthStateChanged(async (user) => {
         if (user) {
@@ -1664,10 +1802,10 @@ async function loadUserData() {
         const userData = snapshot.val();
 
         if (!userData) {
-            userCash = 10000000;
+            userCash = { DM: 10000000 };
             portfolio = {};
         } else {
-            userCash = userData.cash ?? 10000000;
+            userCash = (userData.cash && typeof userData.cash === 'object') ? userData.cash : { DM: 10000000 };
             portfolio = userData.portfolio || {};
         }
 
@@ -1791,7 +1929,7 @@ async function migrateAccount(userId, password, legacyData) {
 
     await database.ref('users/' + uid).set({
         displayName: userId,
-        cash: legacyData.cash ?? 10000000,
+        cash: (legacyData.cash && typeof legacyData.cash === 'object') ? legacyData.cash : { DM: Number(legacyData.cash) || 10000000 },
         portfolio: legacyData.portfolio || {},
         inventory: legacyData.inventory || {},
         createdAt: legacyData.createdAt || new Date().toISOString()
@@ -1867,7 +2005,7 @@ async function signupUser() {
 
         await database.ref('users/' + uid).set({
             displayName: userId,
-            cash: 10000000,
+            cash: { DM: 10000000 },
             portfolio: {},
             inventory: {},
             createdAt: new Date().toISOString()
@@ -2145,13 +2283,15 @@ function setMaxQuantity() {
         return;
     }
 
+    const currency = currentStock.currency || 'DM';
     let maxQuantity = 0;
 
     if (tradeMode === 'buy') {
-        maxQuantity = Math.floor(userCash / currentStock.price);
+        const balance = userCash[currency] || 0;
+        maxQuantity = Math.floor(balance / currentStock.price);
         
         if (maxQuantity === 0) {
-            showToast('현금이 부족합니다!', 'error');
+            showToast(`${currency} 현금이 부족합니다!`, 'error');
             return;
         }
     } else {
@@ -2175,14 +2315,16 @@ function executeTrade() {
     const quantity = parseInt(document.getElementById('tradeQuantity').value);
     const price = currentStock.price;
     const total = quantity * price;
+    const currency = currentStock.currency || 'DM';
+    const currentBalance = userCash[currency] || 0;
 
     if (tradeMode === 'buy') {
-        if (total > userCash) {
-            showToast('현금이 부족합니다!', 'error');
+        if (total > currentBalance) {
+            showToast(`${currency} 현금이 부족합니다!`, 'error');
             return;
         }
         
-        userCash -= total;
+        userCash[currency] = currentBalance - total;
         if (!portfolio[currentStock.symbol]) {
             portfolio[currentStock.symbol] = {
                 name: currentStock.name,
@@ -2202,7 +2344,7 @@ function executeTrade() {
             return;
         }
         
-        userCash += total;
+        userCash[currency] = currentBalance + total;
         portfolio[currentStock.symbol].quantity -= quantity;
         
         if (portfolio[currentStock.symbol].quantity === 0) {
@@ -2220,17 +2362,18 @@ function executeTrade() {
 }
 
 function updateBalance() {
-    document.getElementById('cashBalance').textContent = `DM ${userCash.toLocaleString()}`;
-    
-    let portfolioValue = userCash;
+    document.getElementById('cashBalance').textContent = formatMultiCurrency(userCash);
+
+    const totalByCurrency = { ...userCash };
     Object.keys(portfolio).forEach(symbol => {
         const stock = stocks.find(s => s.symbol === symbol);
         if (stock) {
-            portfolioValue += portfolio[symbol].quantity * stock.price;
+            const cur = stock.currency || 'DM';
+            totalByCurrency[cur] = (totalByCurrency[cur] || 0) + portfolio[symbol].quantity * stock.price;
         }
     });
-    
-    document.getElementById('totalBalance').textContent = `DM ${portfolioValue.toLocaleString()}`;
+
+    document.getElementById('totalBalance').textContent = formatMultiCurrency(totalByCurrency);
 }
 
 function updatePortfolio() {
@@ -2383,6 +2526,8 @@ function startPriceSimulation() {
 // 기타 기능
 // ============================================
 function openTransferModal() {
+    const select = document.getElementById('transferCurrency');
+    select.innerHTML = getCurrencyCodes().map(code => `<option value="${code}">${code}</option>`).join('');
     document.getElementById('transferModal').classList.add('active');
 }
 
@@ -2399,6 +2544,7 @@ function closeTransferModal() {
 async function executeTransfer() {
     const recipientId = document.getElementById('recipientId').value.trim();
     const amount = parseInt(document.getElementById('transferAmount').value);
+    const currency = document.getElementById('transferCurrency').value || 'DM';
 
     if (!recipientId) {
         showToast('받는 사람 ID를 입력하세요!', 'error');
@@ -2412,12 +2558,12 @@ async function executeTransfer() {
         showToast('Firebase 연결이 필요합니다!', 'error');
         return;
     }
-    if (!amount || amount < 1000) {
-        showToast('송금 금액은 최소 DM 1,000 이상이어야 합니다!', 'error');
+    if (!amount || amount < 1) {
+        showToast('올바른 송금 금액을 입력하세요!', 'error');
         return;
     }
-    if (amount > userCash) {
-        showToast('현금이 부족합니다!', 'error');
+    if (amount > (userCash[currency] || 0)) {
+        showToast(`${currency} 현금이 부족합니다!`, 'error');
         return;
     }
 
@@ -2429,15 +2575,15 @@ async function executeTransfer() {
         }
 
         // 1) 내 잔액에서 먼저 차감 (내 데이터라 내가 직접 써도 됨)
-        const cashRef = database.ref('users/' + currentUserUid + '/cash');
+        const cashRef = database.ref('users/' + currentUserUid + '/cash/' + currency);
         const txResult = await cashRef.transaction((current) => {
-            const cur = current ?? 10000000;
+            const cur = current ?? 0;
             if (cur < amount) return; // 취소
             return cur - amount;
         });
 
         if (!txResult.committed) {
-            showToast('현금이 부족합니다!', 'error');
+            showToast(`${currency} 현금이 부족합니다!`, 'error');
             return;
         }
 
@@ -2447,13 +2593,14 @@ async function executeTransfer() {
             from: currentUserUid,
             to: recipientUid,
             amount: amount,
+            currency: currency,
             status: 'pending',
             createdAt: new Date().toISOString()
         });
 
         updateBalance();
         closeTransferModal();
-        showToast(`${recipientId}님께 DM ${amount.toLocaleString()} 송금 완료!`, 'success');
+        showToast(`${recipientId}님께 ${currency} ${amount.toLocaleString()} 송금 완료!`, 'success');
 
         document.getElementById('recipientId').value = '';
         document.getElementById('transferAmount').value = '';
@@ -2474,13 +2621,15 @@ function processIncomingTransfers() {
             const transfer = snapshot.val();
             if (!transfer || transfer.status !== 'pending') return;
 
+            const currency = transfer.currency || 'DM';
+
             try {
-                const cashRef = database.ref('users/' + currentUserUid + '/cash');
-                await cashRef.transaction((current) => (current ?? 10000000) + transfer.amount);
+                const cashRef = database.ref('users/' + currentUserUid + '/cash/' + currency);
+                await cashRef.transaction((current) => (current ?? 0) + transfer.amount);
 
                 await database.ref('transfers/' + snapshot.key + '/status').set('completed');
 
-                showToast(`DM ${transfer.amount.toLocaleString()} 을(를) 받았습니다!`, 'success');
+                showToast(`${currency} ${transfer.amount.toLocaleString()} 을(를) 받았습니다!`, 'success');
             } catch (error) {
                 console.error('송금 수신 처리 실패:', error);
             }
@@ -2526,6 +2675,7 @@ async function toggleAdmin() {
             panel.style.display = 'block';
             renderAdminUserList();
             ensureDefaultStockCountry();
+            ensureDefaultCurrency();
             showToast('관리자 모드 활성화!', 'success');
             return;
         }
@@ -2543,6 +2693,7 @@ async function toggleAdmin() {
                 panel.style.display = 'block';
                 renderAdminUserList();
                 ensureDefaultStockCountry();
+                ensureDefaultCurrency();
                 showToast('관리자 모드 활성화!', 'success');
             } else {
                 // 인증은 됐지만 admins 목록에 없는 계정 → 관리자 권한 없음
@@ -2689,13 +2840,14 @@ async function renderAdminUserList() {
         const userList = Object.keys(usersData).map(uid => {
             const userData = usersData[uid];
             const name = userData.displayName || uid;
-            const cash = userData.cash ?? 10000000;
+            const cashObj = (userData.cash && typeof userData.cash === 'object') ? userData.cash : { DM: userData.cash ?? 10000000 };
+            const cashText = getCurrencyCodes().map(code => `${code} ${(cashObj[code] || 0).toLocaleString()}`).join(' · ');
 
             return `
                 <div class="stock-admin-item">
                     <div style="flex: 1;">
                         <div style="font-weight: 700; color: var(--accent-blue);">${name}</div>
-                        <div style="font-size: 0.85rem; color: var(--text-secondary);">현금: DM ${cash.toLocaleString()}</div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary);">현금: ${cashText}</div>
                     </div>
                     <div style="display: flex; gap: 8px;">
                         <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-green);" 
@@ -2717,7 +2869,8 @@ async function renderAdminUserList() {
 }
 
 async function adminAddMoney(uid, name) {
-    const amount = parseInt(prompt(`${name}님의 계좌에 입금할 금액을 입력하세요:`));
+    const currency = (prompt(`통화 코드를 입력하세요 (기본값: DM):`, 'DM') || 'DM').trim().toUpperCase();
+    const amount = parseInt(prompt(`${name}님의 계좌에 입금할 ${currency} 금액을 입력하세요:`));
 
     if (!amount || amount <= 0) {
         showToast('올바른 금액을 입력하세요!', 'error');
@@ -2733,14 +2886,13 @@ async function adminAddMoney(uid, name) {
             return;
         }
 
-        const newCash = (userData.cash ?? 10000000) + amount;
+        const cashObj = (userData.cash && typeof userData.cash === 'object') ? userData.cash : {};
+        const newCash = (cashObj[currency] || 0) + amount;
 
-        await adminDatabase.ref('users/' + uid).update({
-            cash: newCash,
-            lastUpdate: new Date().toISOString()
-        });
+        await adminDatabase.ref('users/' + uid + '/cash/' + currency).set(newCash);
+        await adminDatabase.ref('users/' + uid + '/lastUpdate').set(new Date().toISOString());
 
-        showToast(`${name}님께 DM ${amount.toLocaleString()} 입금 완료!`, 'success');
+        showToast(`${name}님께 ${currency} ${amount.toLocaleString()} 입금 완료!`, 'success');
         renderAdminUserList();
     } catch (error) {
         console.error('입금 실패:', error);
@@ -2749,7 +2901,8 @@ async function adminAddMoney(uid, name) {
 }
 
 async function adminWithdrawMoney(uid, name) {
-    const amount = parseInt(prompt(`${name}님의 계좌에서 출금할 금액을 입력하세요:`));
+    const currency = (prompt(`통화 코드를 입력하세요 (기본값: DM):`, 'DM') || 'DM').trim().toUpperCase();
+    const amount = parseInt(prompt(`${name}님의 계좌에서 출금할 ${currency} 금액을 입력하세요:`));
 
     if (!amount || amount <= 0) {
         showToast('올바른 금액을 입력하세요!', 'error');
@@ -2765,22 +2918,21 @@ async function adminWithdrawMoney(uid, name) {
             return;
         }
 
-        const currentCash = userData.cash ?? 10000000;
+        const cashObj = (userData.cash && typeof userData.cash === 'object') ? userData.cash : {};
+        const currentCash = cashObj[currency] || 0;
 
         if (amount > currentCash) {
-            if (!confirm(`${name}님의 현금(DM ${currentCash.toLocaleString()})보다 큰 금액입니다.\n\n강제로 출금하시겠습니까? (잔액이 음수가 될 수 있습니다)`)) {
+            if (!confirm(`${name}님의 ${currency} 현금(${currentCash.toLocaleString()})보다 큰 금액입니다.\n\n강제로 출금하시겠습니까? (잔액이 0으로 처리됩니다)`)) {
                 return;
             }
         }
 
-        const newCash = currentCash - amount;
+        const newCash = Math.max(0, currentCash - amount);
 
-        await adminDatabase.ref('users/' + uid).update({
-            cash: newCash,
-            lastUpdate: new Date().toISOString()
-        });
+        await adminDatabase.ref('users/' + uid + '/cash/' + currency).set(newCash);
+        await adminDatabase.ref('users/' + uid + '/lastUpdate').set(new Date().toISOString());
 
-        showToast(`${name}님에게서 DM ${amount.toLocaleString()} 출금 완료!`, 'success');
+        showToast(`${name}님에게서 ${currency} ${amount.toLocaleString()} 출금 완료!`, 'success');
         renderAdminUserList();
     } catch (error) {
         console.error('출금 실패:', error);
@@ -2815,6 +2967,7 @@ async function addNewStock() {
     const price = parseInt(document.getElementById('newStockPrice').value) || 100000;
     const sector = document.getElementById('newStockSector').value;
     const countryId = document.getElementById('newStockCountrySelect').value;
+    const currency = document.getElementById('newStockCurrencySelect').value || 'DM';
 
     if (!symbol || !name) {
         showToast('심볼과 기업명을 입력해주세요!', 'error');
@@ -2842,7 +2995,8 @@ async function addNewStock() {
             price: price,
             change: 0,
             sector: sector,
-            countryId: countryId
+            countryId: countryId,
+            currency: currency
         });
 
         showToast(`${name} (${symbol}) 추가 완료!`, 'success');
@@ -2882,15 +3036,15 @@ async function deleteStock(symbol) {
             for (const userId in usersData) {
                 const userData = usersData[userId];
                 if (userData.portfolio && userData.portfolio[symbol]) {
+                    const currency = stock.currency || 'DM';
                     const refundAmount = userData.portfolio[symbol].quantity * stock.price;
-                    const newCash = (userData.cash ?? 10000000) + refundAmount;
+                    const cashObj = (userData.cash && typeof userData.cash === 'object') ? userData.cash : {};
+                    const newCash = (cashObj[currency] || 0) + refundAmount;
                     
                     delete userData.portfolio[symbol];
                     
-                    await adminDatabase.ref('users/' + userId).update({
-                        cash: newCash,
-                        portfolio: userData.portfolio
-                    });
+                    await adminDatabase.ref('users/' + userId + '/portfolio').set(userData.portfolio);
+                    await adminDatabase.ref('users/' + userId + '/cash/' + currency).set(newCash);
                 }
             }
         }
