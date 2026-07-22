@@ -349,6 +349,21 @@ textarea.input-field { resize: vertical; min-height: 70px; font-family: 'JetBrai
                 </div>
                 <button class="admin-btn" onclick="addCountry()">+ 국가 추가</button>
                 <div style="margin-top: 20px;" id="adminCountryList"></div>
+
+                <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border-color);">
+                    <label class="input-label" style="margin-bottom: 10px;">💱 국가별 상품 화폐 일괄 변경</label>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end;">
+                        <div class="input-group" style="margin-bottom: 0;">
+                            <label class="input-label">대상 국가</label>
+                            <select class="input-field" id="bulkItemCountrySelect"></select>
+                        </div>
+                        <div class="input-group" style="margin-bottom: 0;">
+                            <label class="input-label">변경할 통화</label>
+                            <select class="input-field" id="bulkItemCurrencySelect"></select>
+                        </div>
+                        <button class="admin-btn" style="background: #e74c3c; height: 50px;" onclick="bulkChangeItemCountryCurrency()">일괄 변경</button>
+                    </div>
+                </div>
             </div>
 
             <!-- Theme admin -->
@@ -787,7 +802,7 @@ function populateCurrencySelects() {
         `<option value="${code}">${code}${currencies[code] ? ' - ' + currencies[code].name : ''}</option>`
     ).join('');
 
-    ['newItemCurrency', 'sellItemCurrency'].forEach(id => {
+    ['newItemCurrency', 'sellItemCurrency', 'bulkItemCurrencySelect'].forEach(id => {
         const select = document.getElementById(id);
         if (!select) return;
         const prev = select.value;
@@ -1686,6 +1701,7 @@ function populateAdminCountrySelects() {
 
     const themeSelect = document.getElementById('themeCountrySelect');
     const itemSelect = document.getElementById('itemCountrySelect');
+    const bulkSelect = document.getElementById('bulkItemCountrySelect');
     if (themeSelect) {
         const prev = themeSelect.value;
         themeSelect.innerHTML = options || '<option value="">국가를 먼저 추가하세요</option>';
@@ -1696,6 +1712,55 @@ function populateAdminCountrySelects() {
         itemSelect.innerHTML = options || '<option value="">국가를 먼저 추가하세요</option>';
         if (prev && countries[prev]) itemSelect.value = prev;
         onItemCountryChange();
+    }
+    if (bulkSelect) {
+        const prev = bulkSelect.value;
+        bulkSelect.innerHTML = options || '<option value="">국가를 먼저 추가하세요</option>';
+        if (prev && countries[prev]) bulkSelect.value = prev;
+    }
+}
+
+// 특정 국가에 속한 모든 상품(관리자/유저 등록 상품 전부)의 통화를 한 번에 바꿉니다.
+async function bulkChangeItemCountryCurrency() {
+    const countryId = document.getElementById('bulkItemCountrySelect').value;
+    const currency = document.getElementById('bulkItemCurrencySelect').value;
+
+    if (!countryId) {
+        showToast('대상 국가를 선택하세요!', 'error');
+        return;
+    }
+    if (!currency) {
+        showToast('변경할 통화를 선택하세요!', 'error');
+        return;
+    }
+
+    const targetItems = Object.values(items).filter(i => i.countryId === countryId);
+    if (targetItems.length === 0) {
+        showToast('이 국가에 속한 상품이 없습니다!', 'error');
+        return;
+    }
+
+    const countryName = countries[countryId]?.name || countryId;
+    if (!confirm(`"${countryName}" 국가의 상품 ${targetItems.length}개 화폐를 전부 ${currency}(으)로 바꾸시겠습니까?\n(관리자 상품, 유저 등록 상품 모두 포함됩니다)`)) {
+        return;
+    }
+
+    if (!adminDatabase) {
+        showToast('관리자로 로그인이 필요합니다!', 'error');
+        return;
+    }
+
+    try {
+        const updates = {};
+        targetItems.forEach(item => {
+            updates[`shop_items/${item.id}/currency`] = currency;
+        });
+
+        await adminDatabase.ref().update(updates);
+        showToast(`"${countryName}" 상품 ${targetItems.length}개의 화폐가 ${currency}(으)로 일괄 변경되었습니다!`, 'success');
+    } catch (error) {
+        console.error('일괄 변경 실패:', error);
+        showToast('일괄 변경 중 오류가 발생했습니다!', 'error');
     }
 }
 
