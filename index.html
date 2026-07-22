@@ -1112,6 +1112,21 @@ header {
                 </div>
                 <button class="admin-btn" onclick="addStockCountry()">+ 국가 추가</button>
                 <div style="margin-top: 15px;" id="adminStockCountryList"></div>
+
+                <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border-color);">
+                    <label class="input-label" style="margin-bottom: 10px;">💱 국가별 종목 화폐 일괄 변경</label>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end;">
+                        <div class="input-group" style="margin-bottom: 0;">
+                            <label class="input-label">대상 국가</label>
+                            <select class="input-field" id="bulkStockCountrySelect"></select>
+                        </div>
+                        <div class="input-group" style="margin-bottom: 0;">
+                            <label class="input-label">변경할 통화</label>
+                            <select class="input-field" id="bulkStockCurrencySelect"></select>
+                        </div>
+                        <button class="admin-btn" style="background: var(--accent-red); height: 50px;" onclick="bulkChangeStockCountryCurrency()">일괄 변경</button>
+                    </div>
+                </div>
             </div>
 
             <div style="margin-bottom: 30px;">
@@ -1421,6 +1436,7 @@ function subscribeToStockCountries() {
         renderStockCountryTabs();
         renderStockList();
         populateNewStockCountrySelect();
+        populateBulkStockCountrySelect();
         renderAdminStockCountryList();
         renderAdminStockList();
     });
@@ -1738,6 +1754,7 @@ function subscribeToCurrencies() {
     database.ref('currencies').on('value', (snapshot) => {
         currencies = snapshot.val() || {};
         populateNewStockCurrencySelect();
+        populateBulkStockCurrencySelect();
         renderAdminCurrencyList();
         updateBalance();
     });
@@ -1808,6 +1825,72 @@ function populateNewStockCurrencySelect() {
     const prev = select.value;
     select.innerHTML = options;
     if (prev && getCurrencyCodes().includes(prev)) select.value = prev;
+}
+
+function populateBulkStockCountrySelect() {
+    const select = document.getElementById('bulkStockCountrySelect');
+    if (!select) return;
+    const options = Object.keys(stockCountries).map(id =>
+        `<option value="${id}">${stockCountries[id].flag || '🏳️'} ${stockCountries[id].name}</option>`
+    ).join('');
+    const prev = select.value;
+    select.innerHTML = options || '<option value="">등록된 국가가 없습니다</option>';
+    if (prev && stockCountries[prev]) select.value = prev;
+}
+
+function populateBulkStockCurrencySelect() {
+    const select = document.getElementById('bulkStockCurrencySelect');
+    if (!select) return;
+    const options = getCurrencyCodes().map(code =>
+        `<option value="${code}">${code}${currencies[code] ? ' - ' + currencies[code].name : ''}</option>`
+    ).join('');
+    const prev = select.value;
+    select.innerHTML = options;
+    if (prev && getCurrencyCodes().includes(prev)) select.value = prev;
+}
+
+// 특정 국가에 속한 모든 종목의 통화를 한 번에 바꿉니다.
+async function bulkChangeStockCountryCurrency() {
+    const countryId = document.getElementById('bulkStockCountrySelect').value;
+    const currency = document.getElementById('bulkStockCurrencySelect').value;
+
+    if (!countryId) {
+        showToast('대상 국가를 선택하세요!', 'error');
+        return;
+    }
+    if (!currency) {
+        showToast('변경할 통화를 선택하세요!', 'error');
+        return;
+    }
+
+    const targetStocks = stocks.filter(s => s.countryId === countryId);
+    if (targetStocks.length === 0) {
+        showToast('이 국가에 속한 종목이 없습니다!', 'error');
+        return;
+    }
+
+    const countryName = stockCountries[countryId]?.name || countryId;
+    if (!confirm(`"${countryName}" 국가의 종목 ${targetStocks.length}개 화폐를 전부 ${currency}(으)로 바꾸시겠습니까?\n\n(이미 이 화폐로 종목을 보유 중인 유저들의 포트폴리오 통화 표기에도 영향을 줍니다)`)) {
+        return;
+    }
+
+    if (!adminDatabase) {
+        showToast('관리자로 로그인이 필요합니다!', 'error');
+        return;
+    }
+
+    try {
+        const updates = {};
+        targetStocks.forEach(stock => {
+            updates[`stocks/${stock.symbol}/currency`] = currency;
+        });
+
+        await adminDatabase.ref().update(updates);
+        showToast(`"${countryName}" 종목 ${targetStocks.length}개의 화폐가 ${currency}(으)로 일괄 변경되었습니다!`, 'success');
+    } catch (error) {
+        console.error('일괄 변경 실패:', error);
+        showToast('일괄 변경 중 오류가 발생했습니다!', 'error');
+    }
 }
 
 async function addCurrency() {
@@ -2648,7 +2731,7 @@ function startPriceSimulation() {
             const updates = {};
             
             for (const stock of currentStocks) {
-                const changePercent = (Math.random() * 6 - 3) / 100;
+                const changePercent = (Math.random() * 11 - 5) / 100;
                 const oldPrice = stock.price;
                 
                 let newPrice = stock.price * (1 + changePercent);
