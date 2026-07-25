@@ -1066,7 +1066,7 @@ header {
 
         <!-- Leaderboard -->
         <div class="leaderboard">
-            <div class="panel-title">🏆 실시간 랭킹</div>
+            <div class="panel-title">🏆 보유 주식 가치 랭킹</div>
             <div id="leaderboardContainer"></div>
         </div>
 
@@ -1654,30 +1654,23 @@ function subscribeToLeaderboard() {
             // 노드 키 자체가 그 사람의 아이디이므로 그대로 보여줍니다.
             const name = userData.displayName || uid;
 
-            // 현금은 통화별로 나뉘어 있을 수 있으므로, 환율을 이용해 전부 DM 기준으로 환산합니다.
-            const cashObj = (userData.cash && typeof userData.cash === 'object')
-                ? userData.cash
-                : { DM: typeof userData.cash === 'number' ? userData.cash : 10000000 };
-
-            let totalAssetsInDM = 0;
-            Object.keys(cashObj).forEach(code => {
-                totalAssetsInDM += (cashObj[code] || 0) * getExchangeRate(code);
-            });
+            // 랭킹은 오직 "보유 중인 주식의 가치"만으로 계산합니다 (현금은 반영 안 함).
+            // 종목마다 통화가 다를 수 있으므로 환율로 전부 DM 기준으로 환산해서 합산합니다.
+            let stockValueInDM = 0;
 
             if (userData.portfolio) {
                 for (const symbol in userData.portfolio) {
                     const stock = stocks.find(s => s.symbol === symbol);
                     if (stock) {
                         const stockCurrency = stock.currency || 'DM';
-                        totalAssetsInDM += userData.portfolio[symbol].quantity * stock.price * getExchangeRate(stockCurrency);
+                        stockValueInDM += userData.portfolio[symbol].quantity * stock.price * getExchangeRate(stockCurrency);
                     }
                 }
             }
 
-            const profit = totalAssetsInDM - 10000000;
             rankings.push({
                 name: name,
-                profit: profit,
+                profit: Math.round(stockValueInDM),
                 isCurrentUser: name === currentUser
             });
         }
@@ -2333,25 +2326,37 @@ function renderStockList() {
         return;
     }
 
-    container.innerHTML = filteredStocks.map(stock => `
+    container.innerHTML = filteredStocks.map(stock => {
+        const currency = stock.currency || 'DM';
+        const dmEquivalent = currency !== 'DM'
+            ? `<div style="font-size:0.65rem; color:var(--text-secondary);">≈ DM ${Math.round(stock.price * getExchangeRate(currency)).toLocaleString()}</div>`
+            : '';
+        return `
         <div class="stock-item ${currentStock && stock.symbol === currentStock.symbol ? 'active' : ''}" 
              onclick='selectStock(${JSON.stringify(stock)})'>
             <div class="stock-symbol">${stock.symbol}</div>
             <div class="stock-name">${stock.name}</div>
             <div class="stock-price-info">
-                <span class="stock-price">DM ${stock.price.toLocaleString()}</span>
+                <span>
+                    <span class="stock-price">${currency} ${stock.price.toLocaleString()}</span>
+                    ${dmEquivalent}
+                </span>
                 <span class="stock-change ${stock.change >= 0 ? 'up' : 'down'}">
                     ${stock.change >= 0 ? '+' : ''}${stock.change.toFixed(2)}%
                 </span>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 function selectStock(stock) {
     currentStock = stock;
+    const currency = stock.currency || 'DM';
+
     document.getElementById('chartSymbol').textContent = stock.symbol;
-    document.getElementById('chartPrice').textContent = `DM ${stock.price.toLocaleString()}`;
+    document.getElementById('chartPrice').innerHTML = `${currency} ${stock.price.toLocaleString()}` +
+        (currency !== 'DM' ? `<span style="font-size:0.9rem; color:var(--text-secondary); margin-left:8px;">≈ DM ${Math.round(stock.price * getExchangeRate(currency)).toLocaleString()}</span>` : '');
     document.getElementById('chartChange').textContent = 
         `${stock.change >= 0 ? '+' : ''}${(stock.price * stock.change / 100).toLocaleString()} (${stock.change >= 0 ? '+' : ''}${stock.change.toFixed(2)}%)`;
     document.getElementById('chartChange').className = `price-change ${stock.change >= 0 ? 'up' : 'down'}`;
@@ -2519,10 +2524,17 @@ function updateTradeSummary() {
     const quantity = parseInt(document.getElementById('tradeQuantity').value) || 0;
     const price = currentStock.price;
     const total = quantity * price;
+    const currency = currentStock.currency || 'DM';
 
     document.getElementById('summaryQuantity').textContent = `${quantity} 주`;
-    document.getElementById('summaryPrice').textContent = `DM ${price.toLocaleString()}`;
-    document.getElementById('summaryTotal').textContent = `DM ${total.toLocaleString()}`;
+    document.getElementById('summaryPrice').textContent = `${currency} ${price.toLocaleString()}`;
+
+    if (currency === 'DM') {
+        document.getElementById('summaryTotal').textContent = `DM ${total.toLocaleString()}`;
+    } else {
+        const totalInDM = Math.round(total * getExchangeRate(currency));
+        document.getElementById('summaryTotal').textContent = `${currency} ${total.toLocaleString()} (≈ DM ${totalInDM.toLocaleString()} 결제)`;
+    }
 }
 
 document.getElementById('tradeQuantity').addEventListener('input', updateTradeSummary);
@@ -2533,15 +2545,17 @@ function setMaxQuantity() {
         return;
     }
 
+    // 매매는 항상 DM으로 결제되므로, 종목이 타화폐라면 DM 잔액을 그 통화 기준으로 환산해서 계산합니다.
     const currency = currentStock.currency || 'DM';
+    const priceInDM = currentStock.price * getExchangeRate(currency);
     let maxQuantity = 0;
 
     if (tradeMode === 'buy') {
-        const balance = userCash[currency] || 0;
-        maxQuantity = Math.floor(balance / currentStock.price);
+        const dmBalance = userCash['DM'] || 0;
+        maxQuantity = Math.floor(dmBalance / priceInDM);
         
         if (maxQuantity === 0) {
-            showToast(`${currency} 현금이 부족합니다!`, 'error');
+            showToast('DM 현금이 부족합니다!', 'error');
             return;
         }
     } else {
@@ -2566,15 +2580,18 @@ function executeTrade() {
     const price = currentStock.price;
     const total = quantity * price;
     const currency = currentStock.currency || 'DM';
-    const currentBalance = userCash[currency] || 0;
+
+    // 실제 돈은 항상 DM으로만 오갑니다. 종목이 타화폐면 환율로 환산해서 결제합니다.
+    const totalInDM = currency === 'DM' ? total : Math.round(total * getExchangeRate(currency));
+    const currentDM = userCash['DM'] || 0;
 
     if (tradeMode === 'buy') {
-        if (total > currentBalance) {
-            showToast(`${currency} 현금이 부족합니다!`, 'error');
+        if (totalInDM > currentDM) {
+            showToast('DM 현금이 부족합니다!', 'error');
             return;
         }
         
-        userCash[currency] = currentBalance - total;
+        userCash['DM'] = currentDM - totalInDM;
         if (!portfolio[currentStock.symbol]) {
             portfolio[currentStock.symbol] = {
                 name: currentStock.name,
@@ -2583,25 +2600,26 @@ function executeTrade() {
             };
         }
         
+        // avgPrice는 종목 표시 통화 기준으로 계속 관리합니다 (가격표와 단위를 맞추기 위함)
         const holding = portfolio[currentStock.symbol];
         holding.avgPrice = ((holding.avgPrice * holding.quantity) + total) / (holding.quantity + quantity);
         holding.quantity += quantity;
         
-        showToast(`${currentStock.symbol} ${quantity}주 매수 완료!`, 'success');
+        showToast(`${currentStock.symbol} ${quantity}주 매수 완료! (DM ${totalInDM.toLocaleString()} 결제)`, 'success');
     } else {
         if (!portfolio[currentStock.symbol] || portfolio[currentStock.symbol].quantity < quantity) {
             showToast('보유 수량이 부족합니다!', 'error');
             return;
         }
         
-        userCash[currency] = currentBalance + total;
+        userCash['DM'] = currentDM + totalInDM;
         portfolio[currentStock.symbol].quantity -= quantity;
         
         if (portfolio[currentStock.symbol].quantity === 0) {
             delete portfolio[currentStock.symbol];
         }
         
-        showToast(`${currentStock.symbol} ${quantity}주 매도 완료!`, 'success');
+        showToast(`${currentStock.symbol} ${quantity}주 매도 완료! (DM ${totalInDM.toLocaleString()} 입금)`, 'success');
     }
 
     updateBalance();
@@ -2614,12 +2632,15 @@ function executeTrade() {
 function updateBalance() {
     document.getElementById('cashBalance').innerHTML = renderCurrencyBlock(userCash);
 
+    // 종목 평가액은 실제로 보유한 통화 잔액이 아니라, 매매가 전부 DM으로 이뤄지므로
+    // 항상 DM으로 환산해서 총자산에 더합니다.
     const totalByCurrency = { ...userCash };
     Object.keys(portfolio).forEach(symbol => {
         const stock = stocks.find(s => s.symbol === symbol);
         if (stock) {
-            const cur = stock.currency || 'DM';
-            totalByCurrency[cur] = (totalByCurrency[cur] || 0) + portfolio[symbol].quantity * stock.price;
+            const currency = stock.currency || 'DM';
+            const valueInDM = portfolio[symbol].quantity * stock.price * getExchangeRate(currency);
+            totalByCurrency['DM'] = (totalByCurrency['DM'] || 0) + Math.round(valueInDM);
         }
     });
 
@@ -2689,8 +2710,8 @@ function renderLeaderboard() {
                 <div class="rank-number ${rankClass}">${index + 1}</div>
                 <div class="leaderboard-info">
                     <div class="leaderboard-name">${user.name}${user.isCurrentUser ? ' (나)' : ''}</div>
-                    <div class="leaderboard-profit" style="color: ${user.profit >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">
-                        ${user.profit >= 0 ? '+' : ''}DM ${user.profit.toLocaleString()}
+                    <div class="leaderboard-profit" style="color: var(--accent-green);">
+                        DM ${user.profit.toLocaleString()}
                     </div>
                 </div>
             </div>
@@ -3374,14 +3395,14 @@ async function deleteStock(symbol) {
                 const userData = usersData[userId];
                 if (userData.portfolio && userData.portfolio[symbol]) {
                     const currency = stock.currency || 'DM';
-                    const refundAmount = userData.portfolio[symbol].quantity * stock.price;
+                    const refundAmount = Math.round(userData.portfolio[symbol].quantity * stock.price * getExchangeRate(currency));
                     const cashObj = (userData.cash && typeof userData.cash === 'object') ? userData.cash : {};
-                    const newCash = (cashObj[currency] || 0) + refundAmount;
+                    const newCash = (cashObj['DM'] || 0) + refundAmount;
                     
                     delete userData.portfolio[symbol];
                     
                     await adminDatabase.ref('users/' + userId + '/portfolio').set(userData.portfolio);
-                    await adminDatabase.ref('users/' + userId + '/cash/' + currency).set(newCash);
+                    await adminDatabase.ref('users/' + userId + '/cash/DM').set(newCash);
                 }
             }
         }
