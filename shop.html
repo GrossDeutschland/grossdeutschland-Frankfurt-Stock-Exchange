@@ -302,6 +302,8 @@ textarea.input-field { resize: vertical; min-height: 70px; font-family: 'JetBrai
 
         <button class="admin-toggle" onclick="toggleAdmin()">🔧 관리자 모드</button>
         <button class="admin-toggle" style="right: 180px; background: var(--accent-green); color: var(--bg-primary);" onclick="openSellItemModal()">🛒 판매 등록</button>
+        <button class="admin-toggle" style="right: 340px; background: var(--accent-blue);" onclick="openExchangeModal()">💱 환전</button>
+        <button class="admin-toggle" style="right: 500px; background: var(--accent-purple);" onclick="openMyListingsModal()">📦 내 상품 관리</button>
 
         <div class="dashboard">
             <!-- Country List -->
@@ -469,6 +471,83 @@ textarea.input-field { resize: vertical; min-height: 70px; font-family: 'JetBrai
     </div>
 
     <!-- Sell Item Modal (유저 판매 등록) -->
+    <!-- Exchange Modal (환전) -->
+    <!-- My Listings Modal (내 상품 관리) -->
+    <div class="modal" id="myListingsModal">
+        <div class="modal-content" style="max-width: 560px;">
+            <button class="modal-close" onclick="closeModal('myListingsModal')">×</button>
+            <div class="modal-header">📦 내 상품 관리</div>
+            <div id="myListingsContainer" style="max-height: 60vh; overflow-y: auto;"></div>
+        </div>
+    </div>
+
+    <!-- My Listing Edit Modal (내 상품 수정) -->
+    <div class="modal" id="myItemEditModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('myItemEditModal')">×</button>
+            <div class="modal-header">✏️ 내 상품 수정</div>
+
+            <div class="input-group">
+                <label class="input-label">상품명</label>
+                <input type="text" class="input-field" id="myItemEditName" placeholder="상품명">
+            </div>
+
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px;">
+                <div class="input-group">
+                    <label class="input-label">가격</label>
+                    <input type="number" class="input-field" id="myItemEditPrice" placeholder="10000">
+                </div>
+                <div class="input-group">
+                    <label class="input-label">통화</label>
+                    <select class="input-field" id="myItemEditCurrency"></select>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">설명</label>
+                <textarea class="input-field" id="myItemEditDesc" placeholder="상품 설명"></textarea>
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">이미지 URL</label>
+                <input type="text" class="input-field" id="myItemEditImage" placeholder="https://...">
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">재고에 추가할 수량 (매진된 상품 재입고 등)</label>
+                <input type="number" class="input-field" id="myItemEditAddStock" placeholder="0" value="0" min="0">
+            </div>
+
+            <button class="execute-btn purple" onclick="confirmMyItemEdit()">수정 완료</button>
+        </div>
+    </div>
+
+    <div class="modal" id="exchangeModal">
+        <div class="modal-content" style="position: relative;">
+            <button class="modal-close" onclick="closeExchangeModal()">×</button>
+            <div class="modal-header">💱 환전</div>
+
+            <div class="input-group">
+                <label class="input-label">보내는 통화</label>
+                <select class="input-field" id="exchangeFromCurrency" onchange="updateExchangePreview()"></select>
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">금액</label>
+                <input type="number" class="input-field" id="exchangeAmount" placeholder="금액 입력" min="1" oninput="updateExchangePreview()">
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">받는 통화</label>
+                <select class="input-field" id="exchangeToCurrency" onchange="updateExchangePreview()"></select>
+            </div>
+
+            <div class="modal-summary" id="exchangePreview"></div>
+
+            <button class="execute-btn" onclick="executeExchange()">환전하기</button>
+        </div>
+    </div>
+
     <div class="modal" id="sellItemModal">
         <div class="modal-content">
             <button class="modal-close" onclick="closeModal('sellItemModal')">×</button>
@@ -771,6 +850,115 @@ function subscribeToCurrencies() {
 function getCurrencyCodes() {
     const codes = Object.keys(currencies);
     return codes.length > 0 ? codes : ['DM'];
+}
+
+// 1 [code] = ? DM 인지 환율을 가져옵니다. DM 본인은 항상 1입니다.
+function getExchangeRate(code) {
+    if (code === 'DM') return 1;
+    const c = currencies[code];
+    return (c && typeof c.exchangeRate === 'number' && c.exchangeRate > 0) ? c.exchangeRate : 1;
+}
+
+// fromCode 통화의 amount를, toCode 통화 기준으로 환산합니다. (DM을 매개로 계산)
+function convertCurrency(amount, fromCode, toCode) {
+    if (fromCode === toCode) return amount;
+    const amountInDM = amount * getExchangeRate(fromCode);
+    return amountInDM / getExchangeRate(toCode);
+}
+
+// ============================================
+// 💱 환전
+// ============================================
+function openExchangeModal() {
+    if (!currentUser) { showToast('로그인이 필요합니다!', 'error'); return; }
+
+    const fromSelect = document.getElementById('exchangeFromCurrency');
+    const toSelect = document.getElementById('exchangeToCurrency');
+    const options = getCurrencyCodes().map(code => `<option value="${code}">${code}</option>`).join('');
+
+    fromSelect.innerHTML = options;
+    toSelect.innerHTML = options;
+    if (getCurrencyCodes().length > 1) toSelect.selectedIndex = 1;
+
+    document.getElementById('exchangeAmount').value = '';
+    updateExchangePreview();
+    document.getElementById('exchangeModal').classList.add('active');
+}
+
+function closeExchangeModal() {
+    document.getElementById('exchangeModal').classList.remove('active');
+}
+
+function updateExchangePreview() {
+    const fromCode = document.getElementById('exchangeFromCurrency').value;
+    const toCode = document.getElementById('exchangeToCurrency').value;
+    const amount = parseFloat(document.getElementById('exchangeAmount').value) || 0;
+
+    const preview = document.getElementById('exchangePreview');
+    if (!fromCode || !toCode) { preview.innerHTML = ''; return; }
+
+    const converted = convertCurrency(amount, fromCode, toCode);
+    const myBalance = userCash[fromCode] || 0;
+
+    preview.innerHTML = `
+        <div class="summary-row"><span>내 ${fromCode} 잔액:</span><span>${myBalance.toLocaleString()}</span></div>
+        <div class="summary-row"><span>환율:</span><span>1 ${fromCode} = ${convertCurrency(1, fromCode, toCode).toLocaleString(undefined, {maximumFractionDigits: 6})} ${toCode}</span></div>
+        <div class="summary-row"><span>받게 될 금액:</span><span>${toCode} ${Math.floor(converted).toLocaleString()}</span></div>
+    `;
+}
+
+// 다른 기능(구매 등)에서도 재사용할 수 있는 환전 실행 함수입니다.
+// 성공하면 true, 잔액 부족 등으로 실패하면 false를 반환합니다.
+async function performExchange(fromCode, toCode, amount) {
+    if (!fromCode || !toCode || fromCode === toCode || !amount || amount <= 0) return false;
+
+    const fromRef = database.ref('users/' + currentUserUid + '/cash/' + fromCode);
+    const txResult = await fromRef.transaction((current) => {
+        const cur = current ?? 0;
+        if (cur < amount) return; // 취소
+        return cur - amount;
+    });
+
+    if (!txResult.committed) return false;
+
+    const converted = Math.floor(convertCurrency(amount, fromCode, toCode));
+    const toRef = database.ref('users/' + currentUserUid + '/cash/' + toCode);
+    await toRef.transaction((current) => (current ?? 0) + converted);
+
+    return true;
+}
+
+async function executeExchange() {
+    const fromCode = document.getElementById('exchangeFromCurrency').value;
+    const toCode = document.getElementById('exchangeToCurrency').value;
+    const amount = parseFloat(document.getElementById('exchangeAmount').value);
+
+    if (!fromCode || !toCode || fromCode === toCode) {
+        showToast('서로 다른 통화를 선택하세요!', 'error');
+        return;
+    }
+    if (!amount || amount <= 0) {
+        showToast('올바른 금액을 입력하세요!', 'error');
+        return;
+    }
+    if (amount > (userCash[fromCode] || 0)) {
+        showToast(`${fromCode} 잔액이 부족합니다!`, 'error');
+        return;
+    }
+
+    try {
+        const success = await performExchange(fromCode, toCode, amount);
+        if (!success) {
+            showToast(`${fromCode} 잔액이 부족합니다!`, 'error');
+            return;
+        }
+        const converted = Math.floor(convertCurrency(amount, fromCode, toCode));
+        closeExchangeModal();
+        showToast(`${fromCode} ${amount.toLocaleString()} → ${toCode} ${converted.toLocaleString()} 환전 완료!`, 'success');
+    } catch (error) {
+        console.error('환전 실패:', error);
+        showToast('환전 중 오류가 발생했습니다!', 'error');
+    }
 }
 
 function formatMultiCurrency(balancesObj) {
@@ -1176,22 +1364,50 @@ async function confirmBuy() {
     const qty = Math.max(1, parseInt(document.getElementById('buyQuantity').value) || 1);
     const total = qty * item.price;
 
-    if (total > (userCash[currency] || 0)) {
-        showToast(`${currency} 현금이 부족합니다!`, 'error');
-        return;
+    const available = userCash[currency] || 0;
+
+    if (total > available) {
+        // 이 통화 잔액은 부족하지만, DM으로 환전하면 구매 가능한지 확인합니다.
+        if (currency !== 'DM') {
+            const shortfall = total - available;
+            const dmNeeded = Math.ceil(convertCurrency(shortfall, currency, 'DM'));
+            const dmBalance = userCash['DM'] || 0;
+
+            if (dmBalance >= dmNeeded) {
+                const wantExchange = confirm(
+                    `${currency} 잔액이 부족합니다.\n` +
+                    `부족한 만큼(${currency} ${shortfall.toLocaleString()})을 DM ${dmNeeded.toLocaleString()}만큼 환전하여 구매하시겠습니까?`
+                );
+                if (!wantExchange) return;
+
+                try {
+                    const exchanged = await performExchange('DM', currency, dmNeeded);
+                    if (!exchanged) {
+                        showToast('환전에 실패했습니다. DM 잔액을 확인해주세요!', 'error');
+                        return;
+                    }
+                } catch (error) {
+                    console.error('환전 실패:', error);
+                    showToast('환전 중 오류가 발생했습니다!', 'error');
+                    return;
+                }
+            } else {
+                showToast(`${currency} 현금이 부족하고, DM으로 환전해도 부족합니다!`, 'error');
+                return;
+            }
+        } else {
+            showToast(`${currency} 현금이 부족합니다!`, 'error');
+            return;
+        }
     }
 
     const isUserListing = !!item.sellerUid;
-    const shouldPayoutSeller = isUserListing && resolveMoneyPolicy(item) !== 'vanish';
+    const isOwnListing = isUserListing && item.sellerUid === currentUserUid;
+    const shouldPayoutSeller = isUserListing && !isOwnListing && resolveMoneyPolicy(item) !== 'vanish';
 
     try {
         // 유저가 등록한 상품이면, 재고를 먼저 확보합니다 (동시 구매 충돌 방지)
         if (isUserListing) {
-            if (item.sellerUid === currentUserUid) {
-                showToast('본인이 등록한 상품은 구매할 수 없습니다!', 'error');
-                return;
-            }
-
             const stockRef = database.ref('shop_items/' + item.id + '/stock');
             const txResult = await stockRef.transaction((current) => {
                 const cur = current ?? 0;
@@ -1238,7 +1454,7 @@ async function confirmBuy() {
                 createdAt: new Date().toISOString()
             });
         }
-        // 그 외의 경우(관리자 상품, 또는 소멸 정책 적용된 상품)는 대금이 그대로 소멸됩니다
+        // 그 외의 경우(관리자 상품, 본인 상품, 또는 소멸 정책 적용된 상품)는 대금이 그대로 소멸됩니다
 
         closeModal('buyModal');
         showToast(`${item.name} ${qty}개 구매 완료!`, 'success');
@@ -1525,6 +1741,110 @@ async function confirmSellItem() {
     } catch (error) {
         console.error('판매 등록 실패:', error);
         showToast('판매 등록 중 오류가 발생했습니다!', 'error');
+    }
+}
+
+// ============================================
+// 📦 내 상품 관리 (판매자 본인이 직접 수정 - 관리자 권한 필요 없음)
+// ============================================
+let pendingMyItemEditId = null;
+
+function openMyListingsModal() {
+    if (!currentUser) { showToast('로그인이 필요합니다!', 'error'); return; }
+    renderMyListings();
+    document.getElementById('myListingsModal').classList.add('active');
+}
+
+function renderMyListings() {
+    const container = document.getElementById('myListingsContainer');
+    const myItems = Object.values(items).filter(i => i.sellerUid === currentUserUid);
+
+    if (myItems.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:20px;">등록한 상품이 없습니다</div>';
+        return;
+    }
+
+    container.innerHTML = myItems.map(item => {
+        const stock = item.stock ?? 0;
+        const country = countries[item.countryId] || {};
+        const theme = themes[item.themeId] || {};
+        return `
+            <div class="admin-list-item">
+                <div>
+                    <div><strong>${item.name}</strong> ${stock <= 0 ? '<span style="color:var(--accent-red);">(품절)</span>' : ''}</div>
+                    <div style="font-size:0.75rem;color:var(--text-secondary);">${country.name || ''} · ${theme.name || ''} · ${item.currency || 'DM'} ${item.price.toLocaleString()} · 재고 ${stock.toLocaleString()}개</div>
+                </div>
+                <button class="admin-btn" style="padding:6px 12px;font-size:0.75rem;background:var(--accent-blue);"
+                        onclick="openMyItemEditModal('${item.id}')">✏️ 수정</button>
+            </div>
+        `;
+    }).join('');
+}
+
+function openMyItemEditModal(itemId) {
+    const item = items[itemId];
+    if (!item || item.sellerUid !== currentUserUid) {
+        showToast('본인이 등록한 상품만 수정할 수 있습니다!', 'error');
+        return;
+    }
+
+    pendingMyItemEditId = itemId;
+    document.getElementById('myItemEditName').value = item.name || '';
+    document.getElementById('myItemEditPrice').value = item.price || 0;
+    document.getElementById('myItemEditDesc').value = item.description || '';
+    document.getElementById('myItemEditImage').value = item.image || '';
+    document.getElementById('myItemEditAddStock').value = 0;
+
+    const currencySelect = document.getElementById('myItemEditCurrency');
+    currencySelect.innerHTML = getCurrencyCodes().map(code =>
+        `<option value="${code}">${code}${currencies[code] ? ' - ' + currencies[code].name : ''}</option>`
+    ).join('');
+    currencySelect.value = item.currency || 'DM';
+
+    document.getElementById('myItemEditModal').classList.add('active');
+}
+
+async function confirmMyItemEdit() {
+    const itemId = pendingMyItemEditId;
+    const item = items[itemId];
+    if (!item || item.sellerUid !== currentUserUid) {
+        showToast('본인이 등록한 상품만 수정할 수 있습니다!', 'error');
+        return;
+    }
+
+    const name = document.getElementById('myItemEditName').value.trim();
+    const price = parseInt(document.getElementById('myItemEditPrice').value);
+    const currency = document.getElementById('myItemEditCurrency').value || 'DM';
+    const description = document.getElementById('myItemEditDesc').value.trim();
+    const image = document.getElementById('myItemEditImage').value.trim();
+    const addStock = parseInt(document.getElementById('myItemEditAddStock').value) || 0;
+
+    if (!name) { showToast('상품명을 입력하세요!', 'error'); return; }
+    if (isNaN(price) || price <= 0) { showToast('올바른 가격을 입력하세요!', 'error'); return; }
+    if (addStock < 0) { showToast('추가 수량은 0 이상이어야 합니다!', 'error'); return; }
+
+    try {
+        // 재고 증가는 별도 트랜잭션으로 안전하게 처리 (재고 필드는 "감소만" 허용하는
+        // Rules가 있어서, 증가는 상품 소유자 권한(전체 항목 쓰기)으로 처리됩니다)
+        if (addStock > 0) {
+            const stockRef = database.ref('shop_items/' + itemId + '/stock');
+            await stockRef.transaction((current) => (current ?? 0) + addStock);
+        }
+
+        await database.ref('shop_items/' + itemId).update({
+            name: name,
+            price: price,
+            currency: currency,
+            description: description || '',
+            image: image || ''
+        });
+
+        showToast(`${name} 수정 완료!${addStock > 0 ? ` (재고 +${addStock})` : ''}`, 'success');
+        closeModal('myItemEditModal');
+        renderMyListings();
+    } catch (error) {
+        console.error('내 상품 수정 실패:', error);
+        showToast('상품 수정 중 오류가 발생했습니다!', 'error');
     }
 }
 
