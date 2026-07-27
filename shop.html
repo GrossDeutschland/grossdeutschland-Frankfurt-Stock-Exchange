@@ -492,6 +492,17 @@ textarea.input-field { resize: vertical; min-height: 70px; font-family: 'JetBrai
                 <input type="text" class="input-field" id="myItemEditName" placeholder="상품명">
             </div>
 
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div class="input-group">
+                    <label class="input-label">국가</label>
+                    <select class="input-field" id="myItemEditCountrySelect" onchange="onMyItemEditCountryChange()"></select>
+                </div>
+                <div class="input-group">
+                    <label class="input-label">테마</label>
+                    <select class="input-field" id="myItemEditThemeSelect"></select>
+                </div>
+            </div>
+
             <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px;">
                 <div class="input-group">
                     <label class="input-label">가격</label>
@@ -1801,7 +1812,29 @@ function openMyItemEditModal(itemId) {
     ).join('');
     currencySelect.value = item.currency || 'DM';
 
+    const countrySelect = document.getElementById('myItemEditCountrySelect');
+    countrySelect.innerHTML = Object.keys(countries).map(id =>
+        `<option value="${id}">${countries[id].flag || '🏳️'} ${countries[id].name}</option>`
+    ).join('');
+    countrySelect.value = item.countryId || '';
+
+    onMyItemEditCountryChange(item.themeId);
+
     document.getElementById('myItemEditModal').classList.add('active');
+}
+
+function onMyItemEditCountryChange(preselectThemeId) {
+    const countryId = document.getElementById('myItemEditCountrySelect').value;
+    const themeSelect = document.getElementById('myItemEditThemeSelect');
+    const countryThemes = Object.values(themes).filter(t => t.countryId === countryId);
+
+    themeSelect.innerHTML = countryThemes.length > 0
+        ? countryThemes.map(t => `<option value="${t.id}">${t.name}</option>`).join('')
+        : '<option value="">이 국가에 테마가 없습니다</option>';
+
+    if (preselectThemeId && countryThemes.some(t => t.id === preselectThemeId)) {
+        themeSelect.value = preselectThemeId;
+    }
 }
 
 async function confirmMyItemEdit() {
@@ -1813,6 +1846,8 @@ async function confirmMyItemEdit() {
     }
 
     const name = document.getElementById('myItemEditName').value.trim();
+    const countryId = document.getElementById('myItemEditCountrySelect').value;
+    const themeId = document.getElementById('myItemEditThemeSelect').value;
     const price = parseInt(document.getElementById('myItemEditPrice').value);
     const currency = document.getElementById('myItemEditCurrency').value || 'DM';
     const description = document.getElementById('myItemEditDesc').value.trim();
@@ -1820,6 +1855,7 @@ async function confirmMyItemEdit() {
     const addStock = parseInt(document.getElementById('myItemEditAddStock').value) || 0;
 
     if (!name) { showToast('상품명을 입력하세요!', 'error'); return; }
+    if (!countryId || !themeId) { showToast('국가와 테마를 선택하세요!', 'error'); return; }
     if (isNaN(price) || price <= 0) { showToast('올바른 가격을 입력하세요!', 'error'); return; }
     if (addStock < 0) { showToast('추가 수량은 0 이상이어야 합니다!', 'error'); return; }
 
@@ -1833,6 +1869,8 @@ async function confirmMyItemEdit() {
 
         await database.ref('shop_items/' + itemId).update({
             name: name,
+            countryId: countryId,
+            themeId: themeId,
             price: price,
             currency: currency,
             description: description || '',
