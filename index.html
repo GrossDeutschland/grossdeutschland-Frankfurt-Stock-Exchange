@@ -1005,6 +1005,7 @@ header {
                         <h2 id="chartSymbol">TECH-001</h2>
                         <div class="current-price" id="chartPrice">DM 125,000</div>
                         <div class="price-change up" id="chartChange">+2,500 (+2.04%)</div>
+                        <div id="chartDescription" style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 8px;"></div>
                     </div>
                 </div>
                 <div id="stockChart">
@@ -2554,6 +2555,7 @@ function selectStock(stock) {
     document.getElementById('chartChange').textContent = 
         `${stock.change >= 0 ? '+' : ''}${(stock.price * stock.change / 100).toLocaleString()} (${stock.change >= 0 ? '+' : ''}${stock.change.toFixed(2)}%)`;
     document.getElementById('chartChange').className = `price-change ${stock.change >= 0 ? 'up' : 'down'}`;
+    document.getElementById('chartDescription').textContent = stock.description || '';
     document.getElementById('tradePrice').value = stock.price;
     
     renderStockList();
@@ -3460,7 +3462,7 @@ function renderAdminStockList() {
                 <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-green);"
                         onclick="setStockTrend('${stock.symbol}')">추세적용</button>
                 <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-gold); color: var(--bg-primary);"
-                        onclick="editStockName('${stock.symbol}', '${stock.name.replace(/'/g, "\\'")}')">✏️ 이름수정</button>
+                        onclick="editStockNameAndDesc('${stock.symbol}', '${stock.name.replace(/'/g, "\\'")}', '${(stock.description || '').replace(/'/g, "\\'")}')">✏️ 이름/설명수정</button>
                 <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-blue);" 
                         onclick="setStockPrice('${stock.symbol}', '${stock.name}', ${stock.price})">💰 주가설정</button>
                 <button class="delete-stock-btn" onclick="deleteStock('${stock.symbol}')">삭제</button>
@@ -3775,25 +3777,31 @@ async function deleteStock(symbol) {
 // ============================================
 // 🔥 관리자 주가 설정
 // ============================================
-async function editStockName(symbol, currentName) {
+async function editStockNameAndDesc(symbol, currentName, currentDesc) {
     const newName = prompt(`${symbol}의 새 기업명을 입력하세요:`, currentName);
-
     if (newName === null) return;
     if (!newName.trim()) {
         showToast('기업명을 입력하세요!', 'error');
         return;
     }
+
+    const newDesc = prompt(`${symbol}의 기업 설명을 입력하세요 (선택, 비워둬도 됨):`, currentDesc || '');
+    if (newDesc === null) return;
+
     if (!adminDatabase) {
         showToast('관리자로 로그인이 필요합니다!', 'error');
         return;
     }
 
     try {
-        await adminDatabase.ref('stocks/' + symbol + '/name').set(newName.trim());
-        showToast(`${symbol}의 기업명이 "${newName.trim()}"(으)로 변경되었습니다!`, 'success');
+        await adminDatabase.ref('stocks/' + symbol).update({
+            name: newName.trim(),
+            description: newDesc.trim()
+        });
+        showToast(`${symbol}의 기업명/설명이 수정되었습니다!`, 'success');
     } catch (error) {
-        console.error('기업명 변경 실패:', error);
-        showToast('기업명 변경 중 오류가 발생했습니다!', 'error');
+        console.error('기업명/설명 변경 실패:', error);
+        showToast('수정 중 오류가 발생했습니다!', 'error');
     }
 }
 
