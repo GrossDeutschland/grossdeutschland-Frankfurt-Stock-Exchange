@@ -1070,6 +1070,12 @@ header {
             <div id="leaderboardContainer"></div>
         </div>
 
+        <!-- Country Stock Ratio -->
+        <div class="leaderboard">
+            <div class="panel-title">🌍 국가별 증권 비율</div>
+            <div id="countryStockRatioContainer"></div>
+        </div>
+
         <!-- Admin Panel -->
         <div class="admin-panel" id="adminPanel" style="display: none;">
             <div class="admin-header">
@@ -1167,6 +1173,35 @@ header {
                     </div>
                 </div>
                 <button class="admin-btn" onclick="addNewStock()">+ 기업 추가</button>
+            </div>
+
+            <div style="margin-bottom: 30px;">
+                <h3 style="color: var(--accent-gold); margin-bottom: 15px; font-size: 1rem;">📊 ETF 만들기</h3>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 15px;">
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">심볼 (예: ETF-001)</label>
+                        <input type="text" class="input-field" id="newEtfSymbol" placeholder="ETF-001">
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">ETF명</label>
+                        <input type="text" class="input-field" id="newEtfName" placeholder="예: 기술주 ETF">
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">초기 주가</label>
+                        <input type="number" class="input-field" id="newEtfPrice" placeholder="100000" value="100000">
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">통화</label>
+                        <select class="input-field" id="newEtfCurrencySelect"></select>
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label class="input-label">국가</label>
+                        <select class="input-field" id="newEtfCountrySelect"></select>
+                    </div>
+                </div>
+                <label class="input-label" style="margin-bottom: 10px; display: block;">구성 종목 선택 + 비중 입력 (체크한 것만 반영, 비중은 자동으로 정규화됩니다)</label>
+                <div id="etfConstituentList" style="max-height: 220px; overflow-y: auto; margin-bottom: 15px; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;"></div>
+                <button class="admin-btn" style="background: var(--accent-gold); color: var(--bg-primary);" onclick="createEtf()">+ ETF 생성</button>
             </div>
 
             <div>
@@ -1416,6 +1451,8 @@ function subscribeToStocks() {
             updatePortfolio();
             updateBalance();
             computeLeaderboard();
+            renderCountryStockRatio();
+            renderEtfConstituentList();
         }
     });
 }
@@ -1440,6 +1477,7 @@ function subscribeToStockCountries() {
         populateBulkStockCountrySelect();
         renderAdminStockCountryList();
         renderAdminStockList();
+        renderCountryStockRatio();
     });
 }
 
@@ -1472,16 +1510,17 @@ function selectStockCountry(countryId) {
 }
 
 function populateNewStockCountrySelect() {
-    const select = document.getElementById('newStockCountrySelect');
-    if (!select) return;
-
     const options = Object.keys(stockCountries).map(id =>
         `<option value="${id}">${stockCountries[id].flag || '🏳️'} ${stockCountries[id].name}</option>`
     ).join('');
 
-    const prev = select.value;
-    select.innerHTML = options || '<option value="">국가를 먼저 추가하세요</option>';
-    if (prev && stockCountries[prev]) select.value = prev;
+    ['newStockCountrySelect', 'newEtfCountrySelect'].forEach(elId => {
+        const select = document.getElementById(elId);
+        if (!select) return;
+        const prev = select.value;
+        select.innerHTML = options || '<option value="">국가를 먼저 추가하세요</option>';
+        if (prev && stockCountries[prev]) select.value = prev;
+    });
 }
 
 async function addStockCountry() {
@@ -1521,10 +1560,18 @@ function renderAdminStockCountryList() {
 
     container.innerHTML = ids.map(id => {
         const c = stockCountries[id];
+        const trend = c.trendBias || 'neutral';
+        const trendLabel = trend === 'up' ? '📈 상승 우세' : trend === 'down' ? '📉 하락 우세' : '➖ 중립';
+        const trendColor = trend === 'up' ? 'var(--accent-green)' : trend === 'down' ? 'var(--accent-red)' : 'var(--text-secondary)';
         return `
             <div class="stock-admin-item">
-                <div>${c.flag || '🏳️'} <strong>${c.name}</strong></div>
+                <div>
+                    ${c.flag || '🏳️'} <strong>${c.name}</strong>
+                    <div style="font-size:0.7rem; color:${trendColor};">${trendLabel} (국가 기본값)</div>
+                </div>
                 <div style="display: flex; gap: 8px;">
+                    <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-green);"
+                            onclick="cycleStockCountryTrend('${id}')">추세 변경</button>
                     <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-blue);"
                             onclick="editStockCountry('${id}')">✏️ 수정</button>
                     <button class="delete-stock-btn" onclick="deleteStockCountry('${id}')">삭제</button>
@@ -1532,6 +1579,28 @@ function renderAdminStockCountryList() {
             </div>
         `;
     }).join('');
+}
+
+// 국가의 기본 주가 추세를 순환시킵니다: 중립 → 상승 우세 → 하락 우세 → 다시 중립
+async function cycleStockCountryTrend(countryId) {
+    const c = stockCountries[countryId];
+    if (!c) return;
+    const current = c.trendBias || 'neutral';
+    const next = current === 'neutral' ? 'up' : (current === 'up' ? 'down' : 'neutral');
+
+    if (!adminDatabase) {
+        showToast('관리자로 로그인이 필요합니다!', 'error');
+        return;
+    }
+
+    try {
+        await adminDatabase.ref('stock_countries/' + countryId + '/trendBias').set(next);
+        const label = next === 'up' ? '상승 우세' : next === 'down' ? '하락 우세' : '중립';
+        showToast(`${c.name}의 기본 추세가 "${label}"(으)로 변경되었습니다!`, 'success');
+    } catch (error) {
+        console.error('추세 변경 실패:', error);
+        showToast('추세 변경 중 오류가 발생했습니다!', 'error');
+    }
 }
 
 async function editStockCountry(countryId) {
@@ -1761,6 +1830,7 @@ function subscribeToCurrencies() {
         renderAdminCurrencyList();
         updateBalance();
         computeLeaderboard();
+        renderCountryStockRatio();
     });
 }
 
@@ -1821,14 +1891,123 @@ function convertCurrency(amount, fromCode, toCode) {
 }
 
 function populateNewStockCurrencySelect() {
-    const select = document.getElementById('newStockCurrencySelect');
-    if (!select) return;
     const options = getCurrencyCodes().map(code =>
         `<option value="${code}">${code}${currencies[code] ? ' - ' + currencies[code].name : ''}</option>`
     ).join('');
-    const prev = select.value;
-    select.innerHTML = options;
-    if (prev && getCurrencyCodes().includes(prev)) select.value = prev;
+
+    ['newStockCurrencySelect', 'newEtfCurrencySelect'].forEach(elId => {
+        const select = document.getElementById(elId);
+        if (!select) return;
+        const prev = select.value;
+        select.innerHTML = options;
+        if (prev && getCurrencyCodes().includes(prev)) select.value = prev;
+    });
+}
+
+// ============================================
+// 📊 ETF (여러 종목의 변동률을 비중대로 합산해서 가격이 정해지는 종목)
+// ============================================
+function renderEtfConstituentList() {
+    const container = document.getElementById('etfConstituentList');
+    if (!container) return;
+
+    const candidateStocks = stocks.filter(s => s.type !== 'etf');
+
+    if (candidateStocks.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:12px;font-size:0.85rem;">구성할 수 있는 일반 종목이 없습니다</div>';
+        return;
+    }
+
+    // 기존에 체크/입력된 값은 다시 그릴 때 최대한 유지합니다.
+    const prevChecked = {};
+    const prevWeights = {};
+    candidateStocks.forEach(s => {
+        const checkbox = document.getElementById(`etfPick-${s.symbol}`);
+        const weightInput = document.getElementById(`etfWeight-${s.symbol}`);
+        if (checkbox) prevChecked[s.symbol] = checkbox.checked;
+        if (weightInput) prevWeights[s.symbol] = weightInput.value;
+    });
+
+    container.innerHTML = candidateStocks.map(s => `
+        <div style="display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:1px solid var(--border-color);">
+            <input type="checkbox" id="etfPick-${s.symbol}" ${prevChecked[s.symbol] ? 'checked' : ''}>
+            <span style="flex:1; font-size:0.85rem;">${s.symbol} - ${s.name}</span>
+            <input type="number" class="input-field" style="width:70px; padding:6px; font-size:0.8rem;"
+                   id="etfWeight-${s.symbol}" placeholder="비중" value="${prevWeights[s.symbol] ?? '1'}" min="0" step="0.1">
+        </div>
+    `).join('');
+}
+
+async function createEtf() {
+    const symbol = document.getElementById('newEtfSymbol').value.trim();
+    const name = document.getElementById('newEtfName').value.trim();
+    const price = parseInt(document.getElementById('newEtfPrice').value) || 100000;
+    const currency = document.getElementById('newEtfCurrencySelect').value || 'DM';
+    const countryId = document.getElementById('newEtfCountrySelect').value;
+
+    if (!symbol || !name) {
+        showToast('심볼과 ETF명을 입력하세요!', 'error');
+        return;
+    }
+    if (!countryId) {
+        showToast('국가를 먼저 추가하고 선택하세요!', 'error');
+        return;
+    }
+    if (stocks.find(s => s.symbol === symbol)) {
+        showToast('이미 존재하는 심볼입니다!', 'error');
+        return;
+    }
+
+    const candidateStocks = stocks.filter(s => s.type !== 'etf');
+    const picked = [];
+    let totalWeight = 0;
+
+    candidateStocks.forEach(s => {
+        const checkbox = document.getElementById(`etfPick-${s.symbol}`);
+        if (checkbox && checkbox.checked) {
+            const weight = parseFloat(document.getElementById(`etfWeight-${s.symbol}`).value) || 0;
+            if (weight > 0) {
+                picked.push({ symbol: s.symbol, weight });
+                totalWeight += weight;
+            }
+        }
+    });
+
+    if (picked.length === 0) {
+        showToast('구성 종목을 1개 이상 선택하고 비중을 입력하세요!', 'error');
+        return;
+    }
+    if (!adminDatabase) {
+        showToast('관리자로 로그인이 필요합니다!', 'error');
+        return;
+    }
+
+    // 입력한 비중을 합이 1이 되도록 정규화합니다 (예: 2, 1, 1 → 0.5, 0.25, 0.25)
+    const constituents = {};
+    picked.forEach(p => {
+        constituents[p.symbol] = p.weight / totalWeight;
+    });
+
+    try {
+        await adminDatabase.ref('stocks/' + symbol).set({
+            symbol: symbol,
+            name: name,
+            price: price,
+            change: 0,
+            sector: 'etf',
+            countryId: countryId,
+            currency: currency,
+            type: 'etf',
+            constituents: constituents
+        });
+
+        showToast(`${name} (${symbol}) ETF 생성 완료! (구성 종목 ${picked.length}개)`, 'success');
+        document.getElementById('newEtfSymbol').value = '';
+        document.getElementById('newEtfName').value = '';
+    } catch (error) {
+        console.error('ETF 생성 실패:', error);
+        showToast('ETF 생성 중 오류가 발생했습니다!', 'error');
+    }
 }
 
 function populateBulkStockCountrySelect() {
@@ -2342,10 +2521,13 @@ function renderStockList() {
         const dmEquivalent = currency !== 'DM'
             ? `<div style="font-size:0.65rem; color:var(--text-secondary);">≈ DM ${Math.round(stock.price * getExchangeRate(currency)).toLocaleString()}</div>`
             : '';
+        const etfBadge = stock.type === 'etf'
+            ? `<span style="font-size:0.6rem; background:var(--accent-gold); color:var(--bg-primary); padding:1px 5px; border-radius:4px; margin-left:4px;">ETF</span>`
+            : '';
         return `
         <div class="stock-item ${currentStock && stock.symbol === currentStock.symbol ? 'active' : ''}" 
              onclick='selectStock(${JSON.stringify(stock)})'>
-            <div class="stock-symbol">${stock.symbol}</div>
+            <div class="stock-symbol">${stock.symbol}${etfBadge}</div>
             <div class="stock-name">${stock.name}</div>
             <div class="stock-price-info">
                 <span>
@@ -2702,6 +2884,61 @@ function selectStockBySymbol(symbol) {
     }
 }
 
+// ============================================
+// 🌍 국가별 증권 비율 (종목 개수 비중 + 시가총액 비중)
+// ============================================
+function renderCountryStockRatio() {
+    const container = document.getElementById('countryStockRatioContainer');
+    if (!container) return;
+
+    if (!stocks || stocks.length === 0) {
+        container.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 20px;">종목 데이터 로딩 중...</div>';
+        return;
+    }
+
+    // 국가별로 종목 개수와 시가총액(DM 환산)을 집계합니다.
+    const byCountry = {}; // { countryId(or '__none__'): { count, valueInDM } }
+    let totalCount = 0;
+    let totalValueInDM = 0;
+
+    stocks.forEach(stock => {
+        const key = stock.countryId || '__none__';
+        const currency = stock.currency || 'DM';
+        const valueInDM = stock.price * getExchangeRate(currency);
+
+        if (!byCountry[key]) byCountry[key] = { count: 0, valueInDM: 0 };
+        byCountry[key].count += 1;
+        byCountry[key].valueInDM += valueInDM;
+
+        totalCount += 1;
+        totalValueInDM += valueInDM;
+    });
+
+    const rows = Object.keys(byCountry).map(key => {
+        const country = stockCountries[key];
+        const name = country ? `${country.flag || '🏳️'} ${country.name}` : '(국가 미지정)';
+        const data = byCountry[key];
+        const countRatio = totalCount > 0 ? (data.count / totalCount * 100) : 0;
+        const valueRatio = totalValueInDM > 0 ? (data.valueInDM / totalValueInDM * 100) : 0;
+        return { name, count: data.count, countRatio, valueRatio };
+    }).sort((a, b) => b.valueRatio - a.valueRatio);
+
+    container.innerHTML = rows.map(row => `
+        <div class="leaderboard-item">
+            <div class="leaderboard-info">
+                <div class="leaderboard-name">${row.name}</div>
+                <div style="display:flex; gap:16px; font-size:0.8rem; color:var(--text-secondary); margin-top:4px;">
+                    <span>종목 수: ${row.count}개 (${row.countRatio.toFixed(1)}%)</span>
+                    <span>시가총액 비중: <strong style="color:var(--accent-blue);">${row.valueRatio.toFixed(1)}%</strong></span>
+                </div>
+                <div style="background: var(--bg-tertiary); border-radius: 4px; height: 6px; margin-top: 6px; overflow: hidden;">
+                    <div style="background: var(--accent-blue); height: 100%; width: ${row.valueRatio}%;"></div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
 function renderLeaderboard() {
     const container = document.getElementById('leaderboardContainer');
     
@@ -2733,6 +2970,27 @@ function renderLeaderboard() {
 // ============================================
 // 🔥 주가 시뮬레이션 (1000원 최저선 보장)
 // ============================================
+
+// 종목의 추세 편향을 판단합니다: 종목에 직접 지정된 게 있으면 그걸 우선,
+// 없으면 그 종목이 속한 국가의 기본 추세를 따릅니다. (기본값: 중립)
+function resolveStockTrend(stock) {
+    if (stock.trendBias === 'up' || stock.trendBias === 'down' || stock.trendBias === 'neutral') {
+        return stock.trendBias;
+    }
+    const country = stockCountries[stock.countryId];
+    if (country && (country.trendBias === 'up' || country.trendBias === 'down')) {
+        return country.trendBias;
+    }
+    return 'neutral';
+}
+
+// 추세에 따라 이번 턴의 변동률(%) 범위를 정합니다.
+function getTrendRange(trend) {
+    if (trend === 'up') return { min: -3, max: 9 };     // 상승 우세: -3% ~ +9%
+    if (trend === 'down') return { min: -9, max: 3 };   // 하락 우세: -9% ~ +3%
+    return { min: -5, max: 6 };                          // 중립 (기존 기본값)
+}
+
 function startPriceSimulation() {
     if (!isPriceUpdater || !database) return;
     
@@ -2761,38 +3019,38 @@ function startPriceSimulation() {
             console.log(`📊 업데이트할 기업 수: ${currentStocks.length}개`);
             
             const updates = {};
-            
-            for (const stock of currentStocks) {
-                const changePercent = (Math.random() * 11 - 5) / 100;
-                const oldPrice = stock.price;
-                
-                let newPrice = stock.price * (1 + changePercent);
-                if (newPrice < 1000) {
-                    newPrice = 1000;
-                    console.warn(`⚠️ ${stock.symbol} 주가 1000 미만 차단됨`);
-                }
-                newPrice = Math.round(newPrice);
-                
-                const change = ((newPrice - oldPrice) / oldPrice) * 100;
-                
-                const finalPrice = newPrice < 1000 ? 1000 : newPrice;
-                
-                updates[`stocks/${stock.symbol}/price`] = finalPrice;
-                updates[`stocks/${stock.symbol}/change`] = parseFloat(change.toFixed(2));
-                
-                const historyRef = database.ref(`stocks/${stock.symbol}/history_1M`);
-                const snapshot = await historyRef.once('value');
-                const historyData = snapshot.val();
-                let prices = historyData?.prices || [];
-                
-                prices.push(finalPrice);
-                
-                if (prices.length > 11) {
-                    prices = prices.slice(-11);
-                }
-                
-                updates[`stocks/${stock.symbol}/history_1M/prices`] = prices;
-                updates[`stocks/${stock.symbol}/history_1M/lastUpdate`] = Date.now();
+            const changePercentMap = {}; // symbol -> 이번 턴 변동률(소수). ETF가 참조하기 위해 저장해둡니다.
+
+            // 1) 일반 종목(ETF가 아닌 것) 먼저 계산
+            const normalStocks = currentStocks.filter(s => s.type !== 'etf');
+            const etfStocks = currentStocks.filter(s => s.type === 'etf');
+
+            for (const stock of normalStocks) {
+                const trend = resolveStockTrend(stock);
+                const range = getTrendRange(trend);
+                const changePercent = (Math.random() * (range.max - range.min) + range.min) / 100;
+                changePercentMap[stock.symbol] = changePercent;
+
+                await applyStockPriceUpdate(stock, changePercent, updates);
+            }
+
+            // 2) ETF는 구성 종목들의 이번 턴 변동률을 비중대로 가중평균해서 반영합니다.
+            for (const etf of etfStocks) {
+                const constituents = etf.constituents || {};
+                let weightedChange = 0;
+                let weightSum = 0;
+
+                Object.keys(constituents).forEach(symbol => {
+                    const weight = constituents[symbol];
+                    const cp = changePercentMap[symbol];
+                    if (cp !== undefined && weight > 0) {
+                        weightedChange += cp * weight;
+                        weightSum += weight;
+                    }
+                });
+
+                const changePercent = weightSum > 0 ? weightedChange / weightSum : 0;
+                await applyStockPriceUpdate(etf, changePercent, updates);
             }
             
             await database.ref().update(updates);
@@ -2802,6 +3060,38 @@ function startPriceSimulation() {
             console.error('❌ 주가 업데이트 실패:', error);
         }
     }, 60000);
+}
+
+// 종목 하나의 새 가격/변동률/히스토리를 계산해서 updates 객체에 채워 넣습니다.
+// (일반 종목, ETF 종목 둘 다 이 함수를 공유해서 씁니다)
+async function applyStockPriceUpdate(stock, changePercent, updates) {
+    const oldPrice = stock.price;
+
+    let newPrice = stock.price * (1 + changePercent);
+    if (newPrice < 1000) {
+        newPrice = 1000;
+        console.warn(`⚠️ ${stock.symbol} 주가 1000 미만 차단됨`);
+    }
+    newPrice = Math.round(newPrice);
+
+    const change = ((newPrice - oldPrice) / oldPrice) * 100;
+    const finalPrice = newPrice < 1000 ? 1000 : newPrice;
+
+    updates[`stocks/${stock.symbol}/price`] = finalPrice;
+    updates[`stocks/${stock.symbol}/change`] = parseFloat(change.toFixed(2));
+
+    const historyRef = database.ref(`stocks/${stock.symbol}/history_1M`);
+    const snapshot = await historyRef.once('value');
+    const historyData = snapshot.val();
+    let prices = historyData?.prices || [];
+
+    prices.push(finalPrice);
+    if (prices.length > 11) {
+        prices = prices.slice(-11);
+    }
+
+    updates[`stocks/${stock.symbol}/history_1M/prices`] = prices;
+    updates[`stocks/${stock.symbol}/history_1M/lastUpdate`] = Date.now();
 }
 
 // ============================================
@@ -3135,13 +3425,15 @@ function renderAdminStockList() {
 
     container.innerHTML = stocks.map(stock => {
         const currentCountry = stockCountries[stock.countryId];
+        const trend = stock.trendBias || '';
+        const trendDisplay = trend === 'up' ? '📈 상승(개별지정)' : trend === 'down' ? '📉 하락(개별지정)' : trend === 'neutral' ? '➖ 중립(개별지정)' : '국가 기본값 따름';
         return `
         <div class="stock-admin-item">
             <div style="flex: 1;">
                 <div style="font-weight: 700; color: var(--accent-blue);">${stock.symbol}</div>
                 <div style="font-size: 0.85rem; color: var(--text-secondary);">${stock.name} - DM ${stock.price.toLocaleString()}</div>
                 <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px;">
-                    현재 국가: ${currentCountry ? (currentCountry.flag || '🏳️') + ' ' + currentCountry.name : '(미지정)'}
+                    현재 국가: ${currentCountry ? (currentCountry.flag || '🏳️') + ' ' + currentCountry.name : '(미지정)'} · 추세: ${trendDisplay}
                 </div>
             </div>
             <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
@@ -3150,6 +3442,14 @@ function renderAdminStockList() {
                 </select>
                 <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-purple);"
                         onclick="moveStockToCountry('${stock.symbol}')">🌍 국가이전</button>
+                <select class="input-field" style="width: auto; padding: 6px 8px; font-size: 0.75rem;" id="trendSelect-${stock.symbol}">
+                    <option value="">국가 기본값 따름</option>
+                    <option value="neutral">➖ 중립</option>
+                    <option value="up">📈 상승 우세</option>
+                    <option value="down">📉 하락 우세</option>
+                </select>
+                <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-green);"
+                        onclick="setStockTrend('${stock.symbol}')">추세적용</button>
                 <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-blue);" 
                         onclick="setStockPrice('${stock.symbol}', '${stock.name}', ${stock.price})">💰 주가설정</button>
                 <button class="delete-stock-btn" onclick="deleteStock('${stock.symbol}')">삭제</button>
@@ -3158,11 +3458,38 @@ function renderAdminStockList() {
     `;
     }).join('');
 
-    // 각 종목의 국가 선택창을 현재 국가로 미리 선택해둡니다.
+    // 각 종목의 국가/추세 선택창을 현재 값으로 미리 선택해둡니다.
     stocks.forEach(stock => {
-        const select = document.getElementById(`countrySelect-${stock.symbol}`);
-        if (select && stock.countryId) select.value = stock.countryId;
+        const countrySelect = document.getElementById(`countrySelect-${stock.symbol}`);
+        if (countrySelect && stock.countryId) countrySelect.value = stock.countryId;
+
+        const trendSelect = document.getElementById(`trendSelect-${stock.symbol}`);
+        if (trendSelect) trendSelect.value = stock.trendBias || '';
     });
+}
+
+// 특정 종목의 추세 편향을 개별 지정합니다. (빈 값 선택 시 국가 기본값을 다시 따르게 됨)
+async function setStockTrend(symbol) {
+    const select = document.getElementById(`trendSelect-${symbol}`);
+    if (!select) return;
+    const value = select.value;
+
+    if (!adminDatabase) {
+        showToast('관리자로 로그인이 필요합니다!', 'error');
+        return;
+    }
+
+    try {
+        if (value) {
+            await adminDatabase.ref('stocks/' + symbol + '/trendBias').set(value);
+        } else {
+            await adminDatabase.ref('stocks/' + symbol + '/trendBias').remove();
+        }
+        showToast(`${symbol}의 추세 설정이 변경되었습니다!`, 'success');
+    } catch (error) {
+        console.error('추세 설정 실패:', error);
+        showToast('추세 설정 중 오류가 발생했습니다!', 'error');
+    }
 }
 
 async function moveStockToCountry(symbol) {
