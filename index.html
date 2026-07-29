@@ -3459,6 +3459,8 @@ function renderAdminStockList() {
                 </select>
                 <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-green);"
                         onclick="setStockTrend('${stock.symbol}')">추세적용</button>
+                <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-gold); color: var(--bg-primary);"
+                        onclick="editStockName('${stock.symbol}', '${stock.name.replace(/'/g, "\\'")}')">✏️ 이름수정</button>
                 <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-blue);" 
                         onclick="setStockPrice('${stock.symbol}', '${stock.name}', ${stock.price})">💰 주가설정</button>
                 <button class="delete-stock-btn" onclick="deleteStock('${stock.symbol}')">삭제</button>
@@ -3773,6 +3775,28 @@ async function deleteStock(symbol) {
 // ============================================
 // 🔥 관리자 주가 설정
 // ============================================
+async function editStockName(symbol, currentName) {
+    const newName = prompt(`${symbol}의 새 기업명을 입력하세요:`, currentName);
+
+    if (newName === null) return;
+    if (!newName.trim()) {
+        showToast('기업명을 입력하세요!', 'error');
+        return;
+    }
+    if (!adminDatabase) {
+        showToast('관리자로 로그인이 필요합니다!', 'error');
+        return;
+    }
+
+    try {
+        await adminDatabase.ref('stocks/' + symbol + '/name').set(newName.trim());
+        showToast(`${symbol}의 기업명이 "${newName.trim()}"(으)로 변경되었습니다!`, 'success');
+    } catch (error) {
+        console.error('기업명 변경 실패:', error);
+        showToast('기업명 변경 중 오류가 발생했습니다!', 'error');
+    }
+}
+
 async function setStockPrice(symbol, name, currentPrice) {
     const newPrice = prompt(`${name} (${symbol})의 새 주가를 입력하세요:\n\n현재 주가: DM ${currentPrice.toLocaleString()}\n최소 1,000 이상`, currentPrice);
     
