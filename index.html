@@ -2896,47 +2896,55 @@ function renderCountryStockRatio() {
         return;
     }
 
-    // 국가별로 종목 개수와 시가총액(DM 환산)을 집계합니다.
-    const byCountry = {}; // { countryId(or '__none__'): { count, valueInDM } }
-    let totalCount = 0;
-    let totalValueInDM = 0;
-
+    // 국가별로 종목들을 묶습니다.
+    const byCountry = {}; // { countryId(or '__none__'): [stock, stock, ...] }
     stocks.forEach(stock => {
         const key = stock.countryId || '__none__';
-        const currency = stock.currency || 'DM';
-        const valueInDM = stock.price * getExchangeRate(currency);
-
-        if (!byCountry[key]) byCountry[key] = { count: 0, valueInDM: 0 };
-        byCountry[key].count += 1;
-        byCountry[key].valueInDM += valueInDM;
-
-        totalCount += 1;
-        totalValueInDM += valueInDM;
+        if (!byCountry[key]) byCountry[key] = [];
+        byCountry[key].push(stock);
     });
 
-    const rows = Object.keys(byCountry).map(key => {
-        const country = stockCountries[key];
-        const name = country ? `${country.flag || '🏳️'} ${country.name}` : '(국가 미지정)';
-        const data = byCountry[key];
-        const countRatio = totalCount > 0 ? (data.count / totalCount * 100) : 0;
-        const valueRatio = totalValueInDM > 0 ? (data.valueInDM / totalValueInDM * 100) : 0;
-        return { name, count: data.count, countRatio, valueRatio };
-    }).sort((a, b) => b.valueRatio - a.valueRatio);
+    const countryKeys = Object.keys(byCountry).sort((a, b) => {
+        const nameA = stockCountries[a]?.name || '';
+        const nameB = stockCountries[b]?.name || '';
+        return nameA.localeCompare(nameB);
+    });
 
-    container.innerHTML = rows.map(row => `
-        <div class="leaderboard-item">
-            <div class="leaderboard-info">
-                <div class="leaderboard-name">${row.name}</div>
-                <div style="display:flex; gap:16px; font-size:0.8rem; color:var(--text-secondary); margin-top:4px;">
-                    <span>종목 수: ${row.count}개 (${row.countRatio.toFixed(1)}%)</span>
-                    <span>시가총액 비중: <strong style="color:var(--accent-blue);">${row.valueRatio.toFixed(1)}%</strong></span>
+    container.innerHTML = countryKeys.map(key => {
+        const country = stockCountries[key];
+        const countryName = country ? `${country.flag || '🏳️'} ${country.name}` : '(국가 미지정)';
+        const countryStocks = byCountry[key];
+
+        // 이 국가에 속한 모든 종목의 1주당 가격(DM 환산)을 전부 더합니다.
+        const stocksWithValue = countryStocks.map(s => {
+            const currency = s.currency || 'DM';
+            const priceInDM = s.price * getExchangeRate(currency);
+            return { ...s, priceInDM };
+        });
+        const countryTotal = stocksWithValue.reduce((sum, s) => sum + s.priceInDM, 0);
+
+        const stockRows = stocksWithValue
+            .map(s => ({ ...s, ratio: countryTotal > 0 ? (s.priceInDM / countryTotal * 100) : 0 }))
+            .sort((a, b) => b.ratio - a.ratio)
+            .map(s => `
+                <div style="margin-top: 8px;">
+                    <div style="display:flex; justify-content:space-between; font-size:0.8rem;">
+                        <span>${s.symbol} <span style="color:var(--text-secondary);">- ${s.name}</span></span>
+                        <span style="color:var(--accent-blue); font-weight:600;">${s.ratio.toFixed(1)}%</span>
+                    </div>
+                    <div style="background: var(--bg-tertiary); border-radius: 4px; height: 6px; margin-top: 3px; overflow: hidden;">
+                        <div style="background: var(--accent-blue); height: 100%; width: ${s.ratio}%;"></div>
+                    </div>
                 </div>
-                <div style="background: var(--bg-tertiary); border-radius: 4px; height: 6px; margin-top: 6px; overflow: hidden;">
-                    <div style="background: var(--accent-blue); height: 100%; width: ${row.valueRatio}%;"></div>
-                </div>
+            `).join('');
+
+        return `
+            <div class="leaderboard-item" style="flex-direction: column; align-items: stretch;">
+                <div class="leaderboard-name">${countryName} <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:400;">(종목 ${countryStocks.length}개, 1주당 가격 합계 ≈ DM ${Math.round(countryTotal).toLocaleString()})</span></div>
+                ${stockRows}
             </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function renderLeaderboard() {
