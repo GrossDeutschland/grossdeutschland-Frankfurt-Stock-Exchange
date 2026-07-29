@@ -1244,6 +1244,31 @@ header {
     </div>
 
     <!-- Exchange Modal (환전) -->
+    <!-- Edit Stock Info Modal (심볼/이름/설명 수정) -->
+    <div class="modal" id="editStockInfoModal">
+        <div class="modal-content" style="position: relative;">
+            <button class="modal-close" onclick="closeEditStockInfoModal()">×</button>
+            <div class="modal-header">✏️ 종목 정보 수정</div>
+
+            <div class="input-group">
+                <label class="input-label">심볼</label>
+                <input type="text" class="input-field" id="editStockSymbolInput" placeholder="TECH-001">
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">기업명</label>
+                <input type="text" class="input-field" id="editStockNameInput" placeholder="기업명">
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">설명</label>
+                <textarea class="input-field" id="editStockDescInput" style="min-height: 90px; resize: vertical;" placeholder="기업 설명 (선택)"></textarea>
+            </div>
+
+            <button class="execute-btn buy" onclick="confirmEditStockInfo()">저장</button>
+        </div>
+    </div>
+
     <div class="modal" id="exchangeModal">
         <div class="modal-content" style="position: relative;">
             <button class="modal-close" onclick="closeExchangeModal()">×</button>
@@ -2549,7 +2574,7 @@ function selectStock(stock) {
     currentStock = stock;
     const currency = stock.currency || 'DM';
 
-    document.getElementById('chartSymbol').textContent = stock.symbol;
+    document.getElementById('chartSymbol').innerHTML = `${stock.symbol} <span style="font-size:0.55em; color:var(--text-secondary);">· ${stock.name}</span>`;
     document.getElementById('chartPrice').innerHTML = `${currency} ${stock.price.toLocaleString()}` +
         (currency !== 'DM' ? `<span style="font-size:0.9rem; color:var(--text-secondary); margin-left:8px;">≈ DM ${Math.round(stock.price * getExchangeRate(currency)).toLocaleString()}</span>` : '');
     document.getElementById('chartChange').textContent = 
@@ -3462,7 +3487,7 @@ function renderAdminStockList() {
                 <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-green);"
                         onclick="setStockTrend('${stock.symbol}')">추세적용</button>
                 <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-gold); color: var(--bg-primary);"
-                        onclick="editStockNameAndDesc('${stock.symbol}', '${stock.name.replace(/'/g, "\\'")}', '${(stock.description || '').replace(/'/g, "\\'")}')">✏️ 이름/설명수정</button>
+                        onclick="openEditStockInfoModal('${stock.symbol}')">✏️ 정보수정</button>
                 <button class="admin-btn" style="padding: 6px 12px; font-size: 0.75rem; background: var(--accent-blue);" 
                         onclick="setStockPrice('${stock.symbol}', '${stock.name}', ${stock.price})">💰 주가설정</button>
                 <button class="delete-stock-btn" onclick="deleteStock('${stock.symbol}')">삭제</button>
@@ -3777,31 +3802,106 @@ async function deleteStock(symbol) {
 // ============================================
 // 🔥 관리자 주가 설정
 // ============================================
-async function editStockNameAndDesc(symbol, currentName, currentDesc) {
-    const newName = prompt(`${symbol}의 새 기업명을 입력하세요:`, currentName);
-    if (newName === null) return;
-    if (!newName.trim()) {
-        showToast('기업명을 입력하세요!', 'error');
-        return;
-    }
+let pendingEditStockSymbol = null;
 
-    const newDesc = prompt(`${symbol}의 기업 설명을 입력하세요 (선택, 비워둬도 됨):`, currentDesc || '');
-    if (newDesc === null) return;
+function openEditStockInfoModal(symbol) {
+    const stock = stocks.find(s => s.symbol === symbol);
+    if (!stock) return;
 
-    if (!adminDatabase) {
-        showToast('관리자로 로그인이 필요합니다!', 'error');
+    pendingEditStockSymbol = symbol;
+    document.getElementById('editStockSymbolInput').value = stock.symbol;
+    document.getElementById('editStockNameInput').value = stock.name || '';
+    document.getElementById('editStockDescInput').value = stock.description || '';
+    document.getElementById('editStockInfoModal').classList.add('active');
+}
+
+function closeEditStockInfoModal() {
+    document.getElementById('editStockInfoModal').classList.remove('active');
+}
+
+async function confirmEditStockInfo() {
+    const oldSymbol = pendingEditStockSymbol;
+    const stock = stocks.find(s => s.symbol === oldSymbol);
+    if (!stock) return;
+
+    const newSymbol = document.getElementById('editStockSymbolInput').value.trim();
+    const newName = document.getElementById('editStockNameInput').value.trim();
+    const newDesc = document.getElementById('editStockDescInput').value.trim();
+
+    if (!newSymbol) { showToast('심볼을 입력하세요!', 'error'); return; }
+    if (!newName) { showToast('기업명을 입력하세요!', 'error'); return; }
+    if (!adminDatabase) { showToast('관리자로 로그인이 필요합니다!', 'error'); return; }
+
+    const symbolChanged = newSymbol !== oldSymbol;
+
+    if (symbolChanged && stocks.find(s => s.symbol === newSymbol)) {
+        showToast('이미 존재하는 심볼입니다!', 'error');
         return;
     }
 
     try {
-        await adminDatabase.ref('stocks/' + symbol).update({
-            name: newName.trim(),
-            description: newDesc.trim()
-        });
-        showToast(`${symbol}의 기업명/설명이 수정되었습니다!`, 'success');
+        if (!symbolChanged) {
+            // 심볼은 그대로 → 이름/설명만 간단히 수정
+            await adminDatabase.ref('stocks/' + oldSymbol).update({
+                name: newName,
+                description: newDesc
+            });
+            showToast(`${newSymbol}의 정보가 수정되었습니다!`, 'success');
+        } else {
+            // 심볼이 바뀜 → 심볼은 데이터의 "키"라서, 새 키로 옮기고
+            // 이 종목을 참조하는 모든 곳(포트폴리오, ETF 구성종목)도 같이 옮겨줘야 합니다.
+            if (!confirm(
+                `심볼을 "${oldSymbol}" → "${newSymbol}"(으)로 바꾸면,\n` +
+                `이 종목을 보유 중인 모든 유저의 포트폴리오와, 이 종목을 담고 있는 ETF까지 전부 자동으로 옮겨집니다.\n\n` +
+                `계속할까요?`
+            )) {
+                return;
+            }
+
+            const newStockData = {
+                ...stock,
+                symbol: newSymbol,
+                name: newName,
+                description: newDesc
+            };
+
+            // 1) 새 심볼로 데이터 복사
+            await adminDatabase.ref('stocks/' + newSymbol).set(newStockData);
+
+            // 2) 이 종목을 보유 중인 모든 유저의 포트폴리오를 새 심볼로 이전
+            const usersSnapshot = await adminDatabase.ref('users').once('value');
+            const usersData = usersSnapshot.val() || {};
+
+            for (const uid in usersData) {
+                const userData = usersData[uid];
+                if (userData.portfolio && userData.portfolio[oldSymbol]) {
+                    await adminDatabase.ref(`users/${uid}/portfolio/${newSymbol}`).set(userData.portfolio[oldSymbol]);
+                    await adminDatabase.ref(`users/${uid}/portfolio/${oldSymbol}`).remove();
+                }
+            }
+
+            // 3) 이 종목을 구성종목으로 담고 있는 ETF들의 참조도 새 심볼로 이전
+            const otherEtfs = stocks.filter(s => s.type === 'etf' && s.constituents && s.constituents[oldSymbol] !== undefined);
+            for (const etf of otherEtfs) {
+                const weight = etf.constituents[oldSymbol];
+                await adminDatabase.ref(`stocks/${etf.symbol}/constituents/${newSymbol}`).set(weight);
+                await adminDatabase.ref(`stocks/${etf.symbol}/constituents/${oldSymbol}`).remove();
+            }
+
+            // 4) 옛날 심볼 데이터 삭제
+            await adminDatabase.ref('stocks/' + oldSymbol).remove();
+
+            if (currentStock && currentStock.symbol === oldSymbol) {
+                currentStock = newStockData;
+            }
+
+            showToast(`심볼이 "${oldSymbol}" → "${newSymbol}"(으)로 변경되고, 관련 데이터가 모두 이전되었습니다!`, 'success');
+        }
+
+        closeEditStockInfoModal();
     } catch (error) {
-        console.error('기업명/설명 변경 실패:', error);
-        showToast('수정 중 오류가 발생했습니다!', 'error');
+        console.error('종목 정보 수정 실패:', error);
+        showToast('종목 정보 수정 중 오류가 발생했습니다!', 'error');
     }
 }
 
